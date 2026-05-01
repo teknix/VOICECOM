@@ -49,3 +49,9 @@ room.on(LivekitClient.RoomEvent.ActiveSpeakersChanged, (speakers) => {
 ## Production — Authentik OIDC Integration
 
 **Explicitly out of scope for v1.** Session keys (`user_id`, `display_name`, `role`) are already named to match the OIDC flow. Replace `Phase 2` entirely; no other code changes required.
+
+## Post-v1 Optimization (from Engineering Review)
+- [ ] **Configurable Hotkeys**: Allow users to remap PTT from Caps Lock.
+- [ ] **Recording Disk Cleanup**: Cron job to purge recordings older than 30 days.
+- [ ] **Partial Mode Recovery**: Implement state reconciliation for participants who miss the Data Channel mode-switch message.
+- [ ] **Zulip Lifecycle Log**: (Deferred from CEO Plan) Event aggregation for Join/Leave audit logging.

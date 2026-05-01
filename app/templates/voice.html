@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VoiceCom</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #e0e0e0; margin: 0; display: flex; height: 100vh; overflow: hidden; }
+    #sidebar { width: 220px; background: #16213e; border-right: 1px solid #2a4a7f; display: flex; flex-direction: column; }
+    #sidebar header { padding: .75rem 1rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; color: #607090; border-bottom: 1px solid #2a4a7f; display: flex; justify-content: space-between; align-items: center; }
+    #room-list { flex: 1; overflow-y: auto; padding: .5rem 0; }
+    .room-item { padding: .5rem 1rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: .9rem; border-radius: 4px; margin: 0 .5rem; }
+    .room-item:hover { background: #0f3460; }
+    .room-item.active { background: #4361ee; color: #fff; }
+    .room-count { font-size: .75rem; background: rgba(255,255,255,.15); padding: .1rem .4rem; border-radius: 999px; }
+    #sidebar-footer { padding: .75rem 1rem; border-top: 1px solid #2a4a7f; font-size: .8rem; color: #607090; }
+    #sidebar-footer a { color: #4cc9f0; text-decoration: none; }
+    #main { flex: 1; display: flex; flex-direction: column; }
+    #room-header { padding: .75rem 1.25rem; border-bottom: 1px solid #2a4a7f; display: flex; align-items: center; gap: .75rem; }
+    #room-title { font-weight: 600; font-size: 1rem; }
+    #room-mode-badge { font-size: .7rem; padding: .2rem .5rem; border-radius: 999px; background: #2a4a7f; text-transform: uppercase; letter-spacing: .05em; }
+    #room-mode-badge.broadcast { background: #7209b7; }
+    #content { flex: 1; display: flex; overflow: hidden; }
+    #participants { flex: 1; padding: 1rem; overflow-y: auto; }
+    #participants h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; color: #607090; margin: 0 0 .75rem; }
+    .participant { display: flex; align-items: center; gap: .6rem; padding: .4rem .6rem; border-radius: 4px; margin-bottom: .25rem; font-size: .9rem; }
+    .participant.speaking { background: rgba(76, 201, 240, .12); }
+    .participant .name { flex: 1; }
+    .participant .role-badge { font-size: .7rem; padding: .15rem .4rem; border-radius: 3px; background: #2a4a7f; }
+    .participant .role-badge.admin { background: #7209b7; }
+    .participant .role-badge.moderator { background: #3a0ca3; }
+    .participant .mute-btn { font-size: .75rem; padding: .15rem .4rem; background: #4a2020; border: none; color: #ff6b6b; border-radius: 3px; cursor: pointer; display: none; }
+    .mod-view .participant .mute-btn { display: inline-block; }
+    #controls { padding: .75rem 1.25rem; border-top: 1px solid #2a4a7f; display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
+    .btn { padding: .45rem .9rem; border: none; border-radius: 4px; font-size: .85rem; cursor: pointer; }
+    .btn-primary { background: #4361ee; color: #fff; }
+    .btn-danger { background: #7f1d1d; color: #fca5a5; }
+    .btn-success { background: #14532d; color: #86efac; }
+    .btn-secondary { background: #2a4a7f; color: #e0e0e0; }
+    #mic-btn { min-width: 80px; }
+    #mic-btn.active { background: #166534; }
+    #ptt-hint { font-size: .75rem; color: #607090; }
+    #status-bar { padding: .4rem 1.25rem; background: #0f1631; font-size: .75rem; color: #607090; border-top: 1px solid #16213e; }
+    #hand-raise-toast { position: fixed; top: 1rem; right: 1rem; background: #4361ee; color: #fff; padding: .6rem 1rem; border-radius: 6px; font-size: .85rem; display: none; max-width: 260px; z-index: 100; }
+    #reconnect-banner { display: none; background: #7f1d1d; color: #fca5a5; text-align: center; padding: .5rem; font-size: .85rem; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+<div id="reconnect-banner">Reconnecting…</div>
+
+<div id="sidebar">
+  <header>
+    <span>Channels</span>
+    <a href="/admin" id="admin-link" class="hidden" style="font-size:.75rem;color:#4cc9f0">Admin</a>
+  </header>
+  <div id="room-list"></div>
+  <div id="sidebar-footer">
+    <span id="user-display"></span> &bull; <a href="/auth/logout">Logout</a>
+  </div>
+</div>
+
+<div id="main">
+  <div id="room-header" class="hidden">
+    <span id="room-title"></span>
+    <span id="room-mode-badge">discussion</span>
+    <span id="participant-count" style="font-size:.8rem;color:#607090"></span>
+  </div>
+
+  <div id="content">
+    <div id="participants">
+      <div id="no-room" style="color:#607090;margin-top:2rem;text-align:center">Select a channel to join</div>
+      <h2 class="hidden" id="participants-header">Participants</h2>
+      <div id="participant-list"></div>
+    </div>
+  </div>
+
+  <div id="controls" class="hidden">
+    <button class="btn" id="mic-btn" disabled>🎤 Mute</button>
+    <button class="btn btn-secondary" id="hand-btn" style="display:none">✋ Raise hand</button>
+    <span id="ptt-hint" class="hidden">Hold Caps Lock to talk</span>
+    <div style="flex:1"></div>
+    <div id="mod-controls" class="hidden">
+      <button class="btn btn-secondary" id="mode-btn">Switch to Broadcast</button>
+      <button class="btn btn-secondary" id="rec-btn">⏺ Record</button>
+    </div>
+    <button class="btn btn-danger" id="leave-btn">Leave</button>
+  </div>
+
+  <div id="status-bar">Not connected</div>
+</div>
+
+<div id="hand-raise-toast"></div>
+<div id="audio-container"></div>
+
+<script src="{{ url_for('static', filename='livekit-client.umd.min.js') }}"></script>
+<script>
+const LIVEKIT_WS_URL = "{{ livekit_url }}";
+let me = null;
+let currentRoom = null;
+let lkRoom = null;
+let activeEgressId = null;
+let currentRoomMode = "discussion";
+let pttMode = false;
+
+async function init() {
+  const resp = await fetch("/api/me");
+  if (!resp.ok) { location.href = "/auth/login"; return; }
+  me = await resp.json();
+  document.getElementById("user-display").textContent = me.display_name;
+  if (me.role === "admin") document.getElementById("admin-link").classList.remove("hidden");
+  if (me.role === "admin" || me.role === "moderator") {
+    document.getElementById("mod-controls").classList.remove("hidden");
+    document.getElementById("participants").classList.add("mod-view");
+  }
+  await loadRooms();
+}
+
+async function loadRooms() {
+  const resp = await fetch("/api/rooms");
+  const rooms = await resp.json();
+  const list = document.getElementById("room-list");
+  list.innerHTML = "";
+  rooms.forEach(room => {
+    const el = document.createElement("div");
+    el.className = "room-item";
+    el.dataset.id = room._id;
+    el.innerHTML = `<span>${room.display_name}</span><span class="room-count">${room.participant_count || 0}</span>`;
+    el.onclick = () => joinRoom(room._id, room.display_name, room.mode);
+    list.appendChild(el);
+  });
+}
+
+async function joinRoom(roomId, displayName, mode) {
+  if (lkRoom) await leaveRoom();
+
+  document.querySelectorAll(".room-item").forEach(el => el.classList.remove("active"));
+  document.querySelector(`.room-item[data-id="${roomId}"]`)?.classList.add("active");
+
+  const resp = await fetch("/api/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ room_id: roomId }),
+  });
+  if (!resp.ok) { setStatus("Token error"); return; }
+  const { token } = await resp.json();
+
+  currentRoom = roomId;
+  currentRoomMode = mode;
+
+  lkRoom = new LivekitClient.Room();
+  setupRoomEvents(lkRoom, roomId);
+
+  try {
+    await lkRoom.connect(LIVEKIT_WS_URL, token);
+  } catch (e) {
+    setStatus("Connection failed: " + e.message);
+    return;
+  }
+
+  document.getElementById("room-header").classList.remove("hidden");
+  document.getElementById("room-title").textContent = displayName;
+  document.getElementById("controls").classList.remove("hidden");
+  document.getElementById("no-room").style.display = "none";
+  document.getElementById("participants-header").classList.remove("hidden");
+  document.getElementById("mic-btn").disabled = false;
+  updateModeUI(mode);
+  setStatus("Connected to " + displayName);
+}
+
+function setupRoomEvents(room, roomId) {
+  room.on(LivekitClient.RoomEvent.ParticipantConnected, renderParticipants);
+  room.on(LivekitClient.RoomEvent.ParticipantDisconnected, renderParticipants);
+  room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, pub, participant) => {
+    if (track.kind === LivekitClient.Track.Kind.Audio) {
+      const el = track.attach();
+      el.id = "audio-" + participant.identity;
+      document.getElementById("audio-container").appendChild(el);
+    }
+    renderParticipants();
+  });
+  room.on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, pub, participant) => {
+    track.detach().forEach(el => el.remove());
+    renderParticipants();
+  });
+  room.on(LivekitClient.RoomEvent.ActiveSpeakersChanged, speakers => {
+    const speaking = new Set(speakers.map(s => s.identity));
+    document.querySelectorAll(".participant").forEach(el => {
+      el.classList.toggle("speaking", speaking.has(el.dataset.identity));
+    });
+  });
+  room.on(LivekitClient.RoomEvent.DataReceived, (payload) => {
+    const msg = JSON.parse(new TextDecoder().decode(payload));
+    if (msg.type === "mode_change") updateModeUI(msg.mode);
+    if (msg.type === "hand_raise" && msg.raised) showHandRaise(msg);
+  });
+  room.on(LivekitClient.RoomEvent.LocalTrackPublished, renderParticipants);
+  room.on(LivekitClient.RoomEvent.Disconnected, (reason) => {
+    setStatus("Disconnected: " + reason);
+    document.getElementById("reconnect-banner").style.display = "block";
+    attemptReconnect(roomId);
+  });
+}
+
+async function attemptReconnect(roomId) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt)));
+    try {
+      const resp = await fetch("/api/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ room_id: roomId }),
+      });
+      if (!resp.ok) continue;
+      const { token } = await resp.json();
+      await lkRoom.connect(LIVEKIT_WS_URL, token);
+      document.getElementById("reconnect-banner").style.display = "none";
+      setStatus("Reconnected");
+      return;
+    } catch (e) { /* retry */ }
+  }
+  setStatus("Reconnect failed — please rejoin manually");
+}
+
+function renderParticipants() {
+  if (!lkRoom) return;
+  const list = document.getElementById("participant-list");
+  list.innerHTML = "";
+  const all = [lkRoom.localParticipant, ...lkRoom.remoteParticipants.values()];
+  document.getElementById("participant-count").textContent = all.length + " online";
+  all.forEach(p => {
+    const isLocal = p === lkRoom.localParticipant;
+    const canPub = p.permissions?.canPublish ?? true;
+    const div = document.createElement("div");
+    div.className = "participant";
+    div.dataset.identity = p.identity;
+    div.innerHTML = `
+      <span class="name">${p.name || p.identity}${isLocal ? " (you)" : ""}</span>
+      ${!canPub ? '<span style="font-size:.75rem;color:#607090">🔇</span>' : ""}
+      <span class="role-badge">${p.metadata || "member"}</span>
+      ${!isLocal ? `<button class="mute-btn" onclick="muteParticipant('${p.identity}')">Mute</button>` : ""}
+    `;
+    list.appendChild(div);
+  });
+}
+
+async function muteParticipant(identity) {
+  await fetch(`/api/rooms/${currentRoom}/mute`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: identity, muted: true }),
+  });
+}
+
+function updateModeUI(mode) {
+  currentRoomMode = mode;
+  const badge = document.getElementById("room-mode-badge");
+  badge.textContent = mode;
+  badge.className = "room-mode-badge" + (mode === "broadcast" ? " broadcast" : "");
+  document.getElementById("mode-btn").textContent =
+    mode === "discussion" ? "Switch to Broadcast" : "Switch to Discussion";
+
+  const isMod = me.role === "admin" || me.role === "moderator";
+  if (mode === "broadcast" && !isMod) {
+    document.getElementById("mic-btn").disabled = true;
+    document.getElementById("hand-btn").style.display = "inline-block";
+    document.getElementById("ptt-hint").classList.add("hidden");
+  } else {
+    document.getElementById("mic-btn").disabled = false;
+    document.getElementById("hand-btn").style.display = "none";
+    document.getElementById("ptt-hint").classList.remove("hidden");
+    pttMode = true;
+  }
+}
+
+function showHandRaise(msg) {
+  const toast = document.getElementById("hand-raise-toast");
+  toast.textContent = `✋ ${msg.display_name} raised their hand`;
+  toast.style.display = "block";
+  setTimeout(() => { toast.style.display = "none"; }, 5000);
+}
+
+async function leaveRoom() {
+  if (lkRoom) { await lkRoom.disconnect(); lkRoom = null; }
+  document.getElementById("audio-container").innerHTML = "";
+  document.getElementById("participant-list").innerHTML = "";
+  document.getElementById("room-header").classList.add("hidden");
+  document.getElementById("controls").classList.add("hidden");
+  document.getElementById("no-room").style.display = "block";
+  document.getElementById("participants-header").classList.add("hidden");
+  document.getElementById("reconnect-banner").style.display = "none";
+  currentRoom = null;
+  setStatus("Not connected");
+  document.querySelectorAll(".room-item").forEach(el => el.classList.remove("active"));
+}
+
+function setStatus(msg) {
+  document.getElementById("status-bar").textContent = msg;
+}
+
+// Mic toggle
+document.getElementById("mic-btn").addEventListener("click", async () => {
+  if (!lkRoom) return;
+  const enabled = lkRoom.localParticipant.isMicrophoneEnabled;
+  await lkRoom.localParticipant.setMicrophoneEnabled(!enabled);
+  document.getElementById("mic-btn").textContent = enabled ? "🎤 Unmute" : "🎤 Mute";
+  document.getElementById("mic-btn").classList.toggle("active", !enabled);
+});
+
+// PTT — Caps Lock
+document.addEventListener("keydown", async (e) => {
+  if (!lkRoom || !pttMode) return;
+  if (e.code === "CapsLock" && !e.repeat) {
+    await lkRoom.localParticipant.setMicrophoneEnabled(true);
+    document.getElementById("mic-btn").classList.add("active");
+  }
+});
+document.addEventListener("keyup", async (e) => {
+  if (!lkRoom || !pttMode) return;
+  if (e.code === "CapsLock") {
+    await lkRoom.localParticipant.setMicrophoneEnabled(false);
+    document.getElementById("mic-btn").classList.remove("active");
+  }
+});
+
+// Hand raise
+document.getElementById("hand-btn").addEventListener("click", () => {
+  if (!lkRoom) return;
+  const msg = JSON.stringify({ type: "hand_raise", user_id: me.user_id, display_name: me.display_name, raised: true });
+  lkRoom.localParticipant.publishData(new TextEncoder().encode(msg), { reliable: true });
+});
+
+// Mode toggle
+document.getElementById("mode-btn").addEventListener("click", async () => {
+  const newMode = currentRoomMode === "discussion" ? "broadcast" : "discussion";
+  await fetch(`/api/rooms/${currentRoom}/mode`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: newMode }),
+  });
+});
+
+// Recording
+document.getElementById("rec-btn").addEventListener("click", async () => {
+  if (!currentRoom) return;
+  if (!activeEgressId) {
+    const resp = await fetch("/api/recordings/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ room_id: currentRoom }),
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      activeEgressId = data.egress_id;
+      document.getElementById("rec-btn").textContent = "⏹ Stop Recording";
+      document.getElementById("rec-btn").classList.add("btn-danger");
+    }
+  } else {
+    await fetch("/api/recordings/stop", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ egress_id: activeEgressId }),
+    });
+    activeEgressId = null;
+    document.getElementById("rec-btn").textContent = "⏺ Record";
+    document.getElementById("rec-btn").classList.remove("btn-danger");
+  }
+});
+
+// Leave
+document.getElementById("leave-btn").addEventListener("click", leaveRoom);
+
+init();
+</script>
+</body>
+</html>

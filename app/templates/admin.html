@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>VoiceCom — Admin</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #e0e0e0; margin: 0; padding: 1.5rem; }
+    h1 { font-size: 1.3rem; color: #4cc9f0; margin: 0 0 1.5rem; }
+    h2 { font-size: .9rem; text-transform: uppercase; letter-spacing: .1em; color: #607090; margin: 1.5rem 0 .75rem; }
+    .health { display: inline-block; padding: .2rem .6rem; border-radius: 999px; font-size: .8rem; font-weight: 600; }
+    .health.up { background: #14532d; color: #86efac; }
+    .health.down { background: #7f1d1d; color: #fca5a5; }
+    table { width: 100%; border-collapse: collapse; font-size: .875rem; margin-bottom: 1rem; }
+    th { text-align: left; padding: .4rem .75rem; background: #16213e; color: #607090; font-weight: 500; font-size: .8rem; }
+    td { padding: .4rem .75rem; border-bottom: 1px solid #16213e; }
+    tr:hover td { background: #16213e; }
+    .badge { display: inline-block; padding: .15rem .4rem; border-radius: 3px; font-size: .75rem; background: #2a4a7f; }
+    .badge.active { background: #14532d; color: #86efac; }
+    nav { margin-bottom: 1.5rem; font-size: .85rem; }
+    nav a { color: #4cc9f0; text-decoration: none; margin-right: 1rem; }
+  </style>
+</head>
+<body>
+  <nav><a href="/">← Back to voice</a> <a href="/auth/logout">Logout</a></nav>
+  <h1>Admin Dashboard</h1>
+
+  <div>
+    LiveKit:
+    <span class="health {{ 'up' if lk_healthy else 'down' }}">
+      {{ 'Healthy' if lk_healthy else 'Unreachable' }}
+    </span>
+  </div>
+
+  <h2>Active Rooms ({{ rooms | length }})</h2>
+  <table>
+    <thead><tr><th>Room ID</th><th>Name</th><th>Mode</th><th>Participants</th></tr></thead>
+    <tbody>
+    {% for room in rooms %}
+      <tr>
+        <td>{{ room._id }}</td>
+        <td>{{ room.display_name }}</td>
+        <td>{{ room.mode }}</td>
+        <td>{{ room.participant_count }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" style="color:#607090">No active rooms</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Active Recordings ({{ active_recordings | length }})</h2>
+  <table>
+    <thead><tr><th>Egress ID</th><th>Room</th><th>Started By</th><th>Started At</th><th>Download</th></tr></thead>
+    <tbody>
+    {% for rec in active_recordings %}
+      <tr>
+        <td style="font-size:.75rem;font-family:monospace">{{ rec._id }}</td>
+        <td>{{ rec.room_id }}</td>
+        <td style="font-family:monospace;font-size:.8rem">{{ rec.started_by }}</td>
+        <td>{{ rec.started_at }}</td>
+        <td><a href="/api/recordings/{{ rec._id }}/download" style="color:#4cc9f0">Download</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" style="color:#607090">No active recordings</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Recent Audit Log</h2>
+  <table>
+    <thead><tr><th>Time</th><th>Event</th><th>Room</th><th>Actor</th></tr></thead>
+    <tbody>
+    {% for entry in recent_audit %}
+      <tr>
+        <td style="font-size:.8rem">{{ entry.timestamp }}</td>
+        <td><span class="badge">{{ entry.event }}</span></td>
+        <td>{{ entry.room_id or '—' }}</td>
+        <td style="font-family:monospace;font-size:.8rem">{{ entry.actor }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" style="color:#607090">No entries</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <script>setTimeout(() => location.reload(), 30000);</script>
+</body>
+</html>

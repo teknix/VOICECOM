@@ -1,3 +1,4 @@
+<!-- /autoplan restore point: ~/.gemini/gstack/projects/voicecom/master-autoplan-restore-latest.md -->
 # LiveKit Voice System — Implementation Plan
 **Target:** Coding Agent Handoff  
 **Project Type:** Greenfield — Browser-based Mumble replacement  
@@ -79,7 +80,7 @@ keys:
   API_KEY: <generated>  # store in .env
   API_SECRET: <generated>
 room:
-  max_participants: 55  # 50 members + 5 headroom
+  max_participants: 2000  # 50 members + 5 headroom
 webhook:
   api_key: <same as above>
   urls:
@@ -210,13 +211,27 @@ def mod_required(f):
     return decorated
 ```
 
-### 2.6 Role Behavior
-
-| Role | Can publish audio | Can change room mode | Can record | Can mute others |
+| Role | Can publish audio | Can change room mode | Can record | Scope |
 |---|---|---|---|---|
-| member | Discussion only | No | No | No |
-| moderator | Yes | Yes | Yes | Yes |
-| admin | Yes | Yes | Yes | Yes |
+| member | Discussion only | No | No | N/A |
+| operator | Yes | Yes | Yes | **Single Room Only** |
+| moderator | Yes | Yes | Yes | **Global (All Rooms)** |
+| admin | Yes | Yes | Yes | **Global (All Rooms)** |
+
+---
+
+### 4.1 UI Theme: System Sync
+
+The UI must support **Light** and **Dark** themes, defaulting to the system setting:
+- Use CSS Variables for all colors (`--bg-color`, `--text-color`).
+- Media query `@media (prefers-color-scheme: dark)` for automatic switching.
+- Default to **Dark Theme** for the "Mumble NextGen" aesthetic.
+
+**Mobile Layout:**
+- Implement the "Floor" (participant list) as a **Mobile Bottom Sheet**.
+- Ensure the PTT button is always accessible at the bottom of the screen.
+
+---
 
 > **Production swap:** Replace this entire phase with Authentik OIDC. Session keys (`user_id`, `display_name`, `role`) are intentionally named to match what the OIDC flow will populate — the rest of the app does not need to change.
 
@@ -418,9 +433,9 @@ Use `livekit-server-sdk` `EgressServiceClient` for all Egress calls.
 LiveKit pushes events to `POST /livekit/webhook`. Verify the HMAC signature using `WebhookReceiver` from the SDK before processing.
 
 ```python
-from livekit.api import WebhookReceiver
+from livekit.api import WebhookReceiver, TokenVerifier
 
-receiver = WebhookReceiver(api_key=LIVEKIT_API_KEY, api_secret=LIVEKIT_API_SECRET)
+receiver = WebhookReceiver(TokenVerifier(api_key=LIVEKIT_API_KEY, api_secret=LIVEKIT_API_SECRET))
 
 # POST /livekit/webhook  (no login_required — LiveKit internal call)
 def livekit_webhook():
@@ -722,3 +737,14 @@ livekit-client UMD build  # download from npm; do NOT load from CDN
 - MongoDB document IDs for rooms should be the sector slug (e.g. `sector-northwest`) not ObjectId — makes room lookups by sector trivial
 - LiveKit Egress requires the `DISPLAY` environment variable set in its container — use Xvfb virtual display, which the official image handles internally but confirm in compose
 - `recordings/` volume is shared between Egress (write) and Flask (read). Flask serves downloads via `send_file()` with `os.path.basename()` sanitization — never pass raw DB `file_path` strings to `send_file()`
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | /plan-ceo-review | Scope & strategy | 1 | **CLEAR** | 5 proposals accepted, Mode: Scale-First |
+| Eng Review | /plan-eng-review | Architecture & tests | 1 | **CLEAR** | 7 issues resolved, Load Test Spike added |
+| Design Review | /plan-design-review | UI/UX gaps | 0 | — | Recommended for virtualization grid |
+
+**CROSS-MODEL:** Consensus reached on **Scale-First Architecture** with UI Virtualization and Selective Subscriptions.
+**VERDICT: CEO + ENG CLEARED — Ready to implement.**

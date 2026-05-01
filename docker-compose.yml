@@ -1,0 +1,73 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks: [voice]
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    networks: [voice]
+
+  livekit:
+    image: livekit/livekit-server:latest
+    restart: unless-stopped
+    command: --config /etc/livekit.yaml
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    depends_on:
+      - redis
+    networks: [voice]
+
+  livekit-egress:
+    image: livekit/egress:latest
+    restart: unless-stopped
+    environment:
+      - EGRESS_CONFIG_FILE=/etc/egress.yaml
+    volumes:
+      - ./egress.yaml:/etc/egress.yaml:ro
+      - recordings:/recordings
+    depends_on:
+      - livekit
+    networks: [voice]
+
+  coturn:
+    image: coturn/coturn:latest
+    restart: unless-stopped
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "5349:5349/udp"
+      - "5349:5349/tcp"
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+    networks: [voice]
+
+  flask:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - recordings:/recordings:ro
+    ports:
+      - "5000:5000"
+    depends_on:
+      - mongo
+      - livekit
+    networks: [voice]
+
+volumes:
+  mongo_data:
+  recordings:
+
+networks:
+  voice:
+    driver: bridge
