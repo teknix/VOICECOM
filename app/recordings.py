@@ -5,21 +5,22 @@ from flask import Blueprint, jsonify, request, session, send_file
 from .middleware import mod_required
 from .models import db
 from . import lk
+from .utils import audit_log, now_utc
 
 recordings_bp = Blueprint("recordings", __name__)
 logger = logging.getLogger(__name__)
 
 
-def _now():
+def now_utc():
     return datetime.now(timezone.utc)
 
 
-def _audit(room_id, event, actor, meta=None):
+def audit_log(room_id, event, actor, meta=None):
     db.audit_log.insert_one({
         "event": event,
         "room_id": room_id,
         "actor": actor,
-        "timestamp": _now(),
+        "timestamp": now_utc(),
         "meta": meta or {},
     })
 
@@ -35,7 +36,7 @@ def start_recording():
     if db.recordings.find_one({"room_id": room_id, "status": "active"}):
         return jsonify({"error": "Recording already active for this room"}), 409
 
-    filename = f"{room_id}_{int(_now().timestamp())}.mp4"
+    filename = f"{room_id}_{int(now_utc().timestamp())}.mp4"
     filepath = f"/recordings/{filename}"
 
     try:
@@ -48,7 +49,7 @@ def start_recording():
             "_id": egress_id,
             "room_id": room_id,
             "started_by": session["user_id"],
-            "started_at": _now(),
+            "started_at": now_utc(),
             "stopped_at": None,
             "file_path": filepath,
             "status": "active",
@@ -61,7 +62,7 @@ def start_recording():
             logger.error("Compensation stop_egress also failed: %s", stop_err)
         return jsonify({"error": "Failed to record egress in database"}), 500
 
-    _audit(room_id, "recording_started", session["user_id"], {"egress_id": egress_id})
+    audit_log(room_id, "recording_started", session["user_id"], {"egress_id": egress_id})
     return jsonify({"egress_id": egress_id}), 201
 
 
@@ -84,9 +85,9 @@ def stop_recording():
 
     db.recordings.update_one(
         {"_id": egress_id},
-        {"$set": {"status": "complete", "stopped_at": _now()}},
+        {"$set": {"status": "complete", "stopped_at": now_utc()}},
     )
-    _audit(recording["room_id"], "recording_stopped", session["user_id"], {"egress_id": egress_id})
+    audit_log(recording["room_id"], "recording_stopped", session["user_id"], {"egress_id": egress_id})
     return jsonify({"status": "complete"})
 
 
@@ -110,7 +111,7 @@ def download_recording(egress_id):
         return jsonify({"error": "Not found"}), 404
 
     safe_name = os.path.basename(recording["file_path"])
-    full_path = os.path.join("/recordings", safe_name)
+    full_path = os.path.join(os.environ.get("RECORDINGS_DIR", "/recordings"), safe_name)
 
     if not os.path.exists(full_path):
         return jsonify({"error": "File not on disk yet"}), 404

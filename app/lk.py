@@ -41,6 +41,18 @@ async def _update_participant(room_name: str, identity: str, can_publish: bool, 
         ))
 
 
+async def _update_room_metadata(room_name: str, metadata: str):
+    async with api.LiveKitAPI(
+        url=LIVEKIT_INTERNAL_URL,
+        api_key=LIVEKIT_API_KEY,
+        api_secret=LIVEKIT_API_SECRET,
+    ) as lk:
+        await lk.room.update_room_metadata(api.UpdateRoomMetadataRequest(
+            room=room_name,
+            metadata=metadata,
+        ))
+
+
 async def _list_rooms():
     async with api.LiveKitAPI(
         url=LIVEKIT_INTERNAL_URL,
@@ -81,6 +93,10 @@ def list_participants(room_name: str):
 
 def update_participant(room_name: str, identity: str, can_publish: bool, can_subscribe: bool = True):
     lk_run(_update_participant(room_name, identity, can_publish, can_subscribe))
+
+
+def update_room_metadata(room_name: str, metadata: str):
+    lk_run(_update_room_metadata(room_name, metadata))
 
 
 def list_rooms_participants() -> dict:

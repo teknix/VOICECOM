@@ -1,12 +1,38 @@
 from datetime import datetime, timezone
+import json
 from flask import Blueprint, jsonify, request, session
 from gevent.pool import Pool
 from .middleware import login_required, mod_required
 from .models import db
 from .tokens import issue_token
 from . import lk
+from .auth import ROLE_PRIORITY
+from .utils import audit_log
 
 rooms_bp = Blueprint("rooms", __name__)
+
+
+@rooms_bp.route("/api/rooms/<room_id>/chat", methods=["POST"])
+@login_required
+def send_chat(room_id):
+    """Bridge text chat to Zulip."""
+    data = request.get_json(force=True)
+    message = data.get("message", "").strip()
+    if not message:
+        return jsonify({"error": "message required"}), 400
+
+    room = db.rooms.find_one({"_id": room_id})
+    if not room:
+        return jsonify({"error": "Room not found"}), 404
+
+    # Bridge to Zulip (Deferred to v2.0)
+    # stream = room.get("zulip_stream", "voicecom")
+    # topic = room.get("zulip_topic", room["display_name"])
+    # content = f"**{session['display_name']}**: {message}"
+    # send_to_zulip(stream, topic, content)
+
+    # Note: Client also publishes to LiveKit data channel for real-time UI update
+    return jsonify({"status": "sent"})
 
 
 @rooms_bp.route("/api/me")
@@ -43,6 +69,7 @@ def token():
             display_name=session["display_name"],
             room_id=room_id,
             role=session["role"],
+            sector=session.get("sector", "Sector 01"),
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
@@ -61,30 +88,33 @@ def toggle_mode(room_id):
     if not room:
         return jsonify({"error": "Room not found"}), 404
 
-    presenter_ids = room.get("presenter_ids", [])
-
     try:
-        participants = lk.list_participants(room_id)
-    except Exception as e:
-        return jsonify({"error": f"LiveKit unreachable: {e}"}), 502
-
-    def can_publish_in_broadcast(identity):
-        return identity in presenter_ids
-
-    def update_one(participant):
-        can_pub = True if new_mode == "discussion" else can_publish_in_broadcast(participant.identity)
-        lk.update_participant(room_id, participant.identity, can_publish=can_pub)
-
-    pool = Pool(10)
-    try:
-        pool.map(update_one, participants)
+        lk.update_room_metadata(room_id, json.dumps({"mode": new_mode}))
     except Exception as e:
         return jsonify({"error": f"LiveKit update failed: {e}"}), 502
 
     db.rooms.update_one({"_id": room_id}, {"$set": {"mode": new_mode}})
-    _audit(room_id, "mode_change", session["user_id"], {"mode": new_mode})
+    audit_log(room_id, "mode_change", session["user_id"], {"mode": new_mode})
 
     return jsonify({"mode": new_mode})
+
+
+@rooms_bp.route("/api/rooms/<room_id>/sync", methods=["POST"])
+@mod_required
+def sync_room(room_id):
+    room = db.rooms.find_one({"_id": room_id})
+    if not room:
+        return jsonify({"error": "Room not found"}), 404
+
+    mode = room.get("mode", "discussion")
+    try:
+        lk.update_room_metadata(room_id, json.dumps({"mode": mode}))
+    except Exception as e:
+        return jsonify({"error": f"LiveKit sync failed: {e}"}), 502
+
+    audit_log(room_id, "room_sync", session["user_id"], {"mode": mode})
+
+    return jsonify({"status": "synced", "mode": mode})
 
 
 @rooms_bp.route("/api/rooms/<room_id>/mute", methods=["POST"])
@@ -96,14 +126,50 @@ def mute_participant(room_id):
     if not target_user_id:
         return jsonify({"error": "user_id required"}), 400
 
+    # Hierarchical Check: Fetch target role from LiveKit metadata
+    try:
+        participants = lk.list_participants(room_id)
+        target = next((p for p in participants if p.identity == target_user_id), None)
+        if target and target.metadata:
+            target_meta = json.loads(target.metadata)
+            target_role = target_meta.get("role", "member")
+            
+            current_role = session.get("role", "member")
+            if ROLE_PRIORITY.get(current_role, 0) < ROLE_PRIORITY.get(target_role, 0):
+                return jsonify({"error": f"Cannot mute higher role: {target_role}"}), 403
+    except Exception as e:
+        return jsonify({"error": f"Role verification failed: {e}"}), 502
+
     try:
         lk.update_participant(room_id, target_user_id, can_publish=not muted)
     except Exception as e:
         return jsonify({"error": str(e)}), 502
 
-    _audit(room_id, "participant_muted" if muted else "participant_unmuted",
+    audit_log(room_id, "participant_muted" if muted else "participant_unmuted",
            session["user_id"], {"target": target_user_id})
     return jsonify({"muted": muted})
+
+
+@rooms_bp.route("/api/rooms/<room_id>/operator", methods=["POST"])
+@mod_required
+def manage_operator(room_id):
+    """Admin/Mod only: Assign per-room operator status."""
+    if session.get("role") not in ("admin", "moderator"):
+        return jsonify({"error": "Global Moderator or Admin rights required"}), 403
+        
+    data = request.get_json(force=True)
+    target_user_id = data.get("user_id", "").strip()
+    action = data.get("action", "")
+    if not target_user_id or action not in ("grant", "revoke"):
+        return jsonify({"error": "user_id and action (grant|revoke) required"}), 400
+
+    if action == "grant":
+        db.rooms.update_one({"_id": room_id}, {"$addToSet": {"operator_ids": target_user_id}})
+    else:
+        db.rooms.update_one({"_id": room_id}, {"$pull": {"operator_ids": target_user_id}})
+
+    audit_log(room_id, f"operator_{action}", session["user_id"], {"target": target_user_id})
+    return jsonify({"action": action, "user_id": target_user_id})
 
 
 @rooms_bp.route("/api/rooms/<room_id>/presenter", methods=["POST"])
@@ -128,11 +194,11 @@ def manage_presenter(room_id):
     except Exception:
         pass  # best-effort live update; DB is source of truth for next token
 
-    _audit(room_id, f"presenter_{action}", session["user_id"], {"target": target_user_id})
+    audit_log(room_id, f"presenter_{action}", session["user_id"], {"target": target_user_id})
     return jsonify({"action": action, "user_id": target_user_id})
 
 
-def _audit(room_id, event, actor, meta=None):
+def audit_log(room_id, event, actor, meta=None):
     db.audit_log.insert_one({
         "event": event,
         "room_id": room_id,

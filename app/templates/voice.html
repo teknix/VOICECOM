@@ -5,55 +5,118 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VoiceCom</title>
   <style>
+    :root {
+      --bg: #fff;
+      --surface: #f3f4f6;
+      --border: #e5e7eb;
+      --text: #111827;
+      --muted: #6b7280;
+      --primary: #4361ee;
+      --danger: #ef4444;
+      --hot-mic: rgba(239, 68, 68, 0.4);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1a1a2e;
+        --surface: #16213e;
+        --border: #2a4a7f;
+        --text: #e0e0e0;
+        --muted: #a0a0b0;
+      }
+    }
+
     *, *::before, *::after { box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #e0e0e0; margin: 0; display: flex; height: 100vh; overflow: hidden; }
-    #sidebar { width: 220px; background: #16213e; border-right: 1px solid #2a4a7f; display: flex; flex-direction: column; }
-    #sidebar header { padding: .75rem 1rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; color: #607090; border-bottom: 1px solid #2a4a7f; display: flex; justify-content: space-between; align-items: center; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; display: flex; height: 100vh; overflow: hidden; transition: box-shadow 0.2s; }
+    body.hot-mic { box-shadow: inset 0 0 30px 10px var(--hot-mic); animation: pulse-red 1.5s infinite; }
+    
+    @keyframes pulse-red {
+      0% { box-shadow: inset 0 0 15px 5px var(--hot-mic); }
+      50% { box-shadow: inset 0 0 45px 15px var(--hot-mic); }
+      100% { box-shadow: inset 0 0 15px 5px var(--hot-mic); }
+    }
+
+    #sidebar { width: 220px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+    
+    @media (max-width: 768px) {
+      #sidebar { display: none; }
+      #content { flex-direction: column; }
+      #room-chat { min-width: 100%; height: 300px; }
+    }
+
+    #sidebar header { padding: .75rem 1rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
     #room-list { flex: 1; overflow-y: auto; padding: .5rem 0; }
     .room-item { padding: .5rem 1rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: .9rem; border-radius: 4px; margin: 0 .5rem; }
-    .room-item:hover { background: #0f3460; }
-    .room-item.active { background: #4361ee; color: #fff; }
+    .room-item:hover { background: rgba(255,255,255,0.05); }
+    .room-item.active { background: var(--primary); color: #fff; }
     .room-count { font-size: .75rem; background: rgba(255,255,255,.15); padding: .1rem .4rem; border-radius: 999px; }
-    #sidebar-footer { padding: .75rem 1rem; border-top: 1px solid #2a4a7f; font-size: .8rem; color: #607090; }
+    #sidebar-footer { padding: .75rem 1rem; border-top: 1px solid var(--border); font-size: .8rem; color: var(--muted); }
     #sidebar-footer a { color: #4cc9f0; text-decoration: none; }
+    
     #main { flex: 1; display: flex; flex-direction: column; }
-    #room-header { padding: .75rem 1.25rem; border-bottom: 1px solid #2a4a7f; display: flex; align-items: center; gap: .75rem; }
+    #room-header { padding: .75rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: .75rem; }
     #room-title { font-weight: 600; font-size: 1rem; }
-    #room-mode-badge { font-size: .7rem; padding: .2rem .5rem; border-radius: 999px; background: #2a4a7f; text-transform: uppercase; letter-spacing: .05em; }
-    #room-mode-badge.broadcast { background: #7209b7; }
-    #content { flex: 1; display: flex; overflow: hidden; }
-    #participants { flex: 1; padding: 1rem; overflow-y: auto; }
-    #participants h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; color: #607090; margin: 0 0 .75rem; }
-    .participant { display: flex; align-items: center; gap: .6rem; padding: .4rem .6rem; border-radius: 4px; margin-bottom: .25rem; font-size: .9rem; }
-    .participant.speaking { background: rgba(76, 201, 240, .12); }
-    .participant .name { flex: 1; }
-    .participant .role-badge { font-size: .7rem; padding: .15rem .4rem; border-radius: 3px; background: #2a4a7f; }
-    .participant .role-badge.admin { background: #7209b7; }
-    .participant .role-badge.moderator { background: #3a0ca3; }
-    .participant .mute-btn { font-size: .75rem; padding: .15rem .4rem; background: #4a2020; border: none; color: #ff6b6b; border-radius: 3px; cursor: pointer; display: none; }
-    .mod-view .participant .mute-btn { display: inline-block; }
-    #controls { padding: .75rem 1.25rem; border-top: 1px solid #2a4a7f; display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
+    #room-mode-badge { font-size: .7rem; padding: .2rem .5rem; border-radius: 999px; background: var(--surface); text-transform: uppercase; letter-spacing: .05em; border: 1px solid var(--border); }
+    #room-mode-badge.broadcast { background: #7209b7; color: white; border-color: transparent; }
+    
+    #content { flex: 1; display: flex; overflow: hidden; padding: 1rem; gap: 1rem; }
+    
+    #room-main { flex: 3; display: flex; flex-direction: column; gap: 1rem; overflow-y: auto; }
+    #room-chat { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; min-width: 280px; }
+    #chat-messages { flex: 1; overflow-y: auto; padding: 1rem; font-size: .85rem; }
+    #chat-input-area { padding: .75rem; border-top: 1px solid var(--border); display: flex; gap: .5rem; }
+    #chat-input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); padding: .4rem .6rem; font-size: .85rem; }
+    
+    /* Stage: Top Speakers */
+    #stage { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; }
+    #stage:empty::after { content: "No one is speaking"; color: var(--muted); font-size: .85rem; padding: 1rem; text-align: center; width: 100%; grid-column: 1/-1; }
+    .stage-item { background: var(--surface); border: 2px solid var(--border); border-radius: 8px; padding: 1rem; text-align: center; transition: border-color 0.2s; }
+    .stage-item.speaking { border-color: var(--primary); box-shadow: 0 0 10px var(--primary); }
+    .stage-item .avatar { width: 48px; height: 48px; background: var(--muted); border-radius: 50%; margin: 0 auto .5rem; line-height: 48px; font-weight: bold; font-size: 1.2rem; }
+
+    /* Floor: Virtualized list */
+    #floor-container { flex: 1; overflow-y: auto; border-top: 1px solid var(--border); padding-top: 1rem; }
+    #floor-container h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: 0 0 .75rem; }
+    #floor { display: flex; flex-direction: column; min-height: 2000px; position: relative; } /* height set dynamically */
+    .floor-item { display: flex; align-items: center; gap: .6rem; padding: .4rem .6rem; border-radius: 4px; font-size: .9rem; position: absolute; left: 0; right: 0; height: 40px; }
+    .floor-item.speaking { background: rgba(76, 201, 240, .12); }
+    .floor-item .name { flex: 1; }
+    .floor-item .role-badge { font-size: .7rem; padding: .15rem .4rem; border-radius: 3px; background: var(--surface); border: 1px solid var(--border); }
+    .floor-item .role-badge.admin { background: #7209b7; color: white; }
+    .floor-header { display: flex; align-items: center; padding: 0 .6rem; font-size: .75rem; text-transform: uppercase; color: var(--muted); font-weight: bold; border-bottom: 1px solid var(--border); position: absolute; left: 0; right: 0; height: 40px; background: var(--surface); z-index: 1; }
+
+    /* High Density IRC Mode */
+    body.density-irc { font-size: 0.85rem; }
+    body.density-irc .floor-item, body.density-irc .floor-header { height: 24px; padding: 0.1rem 0.6rem; font-size: 0.8rem; }
+    body.density-irc .floor-item .name { font-size: 0.8rem; }
+    body.density-irc .floor-item .role-badge { font-size: 0.65rem; padding: 0.05rem 0.3rem; }
+    body.density-irc .floor-item .quality-dot { width: 6px !important; height: 6px !important; }
+    body.density-irc .floor-item .btn { padding: 1px 4px !important; font-size: 0.65rem !important; }
+    body.density-irc .stage-item .avatar { width: 24px; height: 24px; line-height: 24px; font-size: 0.8rem; margin-bottom: 0.25rem; }
+    body.density-irc .stage-item { padding: 0.5rem; }
+    body.density-irc .stage-item div[style*="font-size:.9rem"] { font-size: 0.8rem !important; }
+    body.density-irc .stage-item div[style*="font-size:.7rem"] { font-size: 0.65rem !important; }
+    
+    #controls { padding: .75rem 1.25rem; border-top: 1px solid var(--border); background: var(--surface); display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
     .btn { padding: .45rem .9rem; border: none; border-radius: 4px; font-size: .85rem; cursor: pointer; }
-    .btn-primary { background: #4361ee; color: #fff; }
-    .btn-danger { background: #7f1d1d; color: #fca5a5; }
-    .btn-success { background: #14532d; color: #86efac; }
-    .btn-secondary { background: #2a4a7f; color: #e0e0e0; }
-    #mic-btn { min-width: 80px; }
-    #mic-btn.active { background: #166534; }
-    #ptt-hint { font-size: .75rem; color: #607090; }
-    #status-bar { padding: .4rem 1.25rem; background: #0f1631; font-size: .75rem; color: #607090; border-top: 1px solid #16213e; }
-    #hand-raise-toast { position: fixed; top: 1rem; right: 1rem; background: #4361ee; color: #fff; padding: .6rem 1rem; border-radius: 6px; font-size: .85rem; display: none; max-width: 260px; z-index: 100; }
-    #reconnect-banner { display: none; background: #7f1d1d; color: #fca5a5; text-align: center; padding: .5rem; font-size: .85rem; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    
+    #mic-btn.active { background: #166534; color: white; }
+    #status-bar { padding: .4rem 1.25rem; background: var(--surface); font-size: .75rem; color: var(--muted); border-top: 1px solid var(--border); }
     .hidden { display: none !important; }
   </style>
 </head>
 <body>
-<div id="reconnect-banner">Reconnecting…</div>
+<div id="reconnect-banner" style="display:none;background:var(--danger);color:#fff;text-align:center;padding:.5rem;font-size:.85rem;">Reconnecting…</div>
 
 <div id="sidebar">
   <header>
-    <span>Channels</span>
-    <a href="/admin" id="admin-link" class="hidden" style="font-size:.75rem;color:#4cc9f0">Admin</a>
+    <span>NextGen Voice</span>
+    <div style="display:flex; align-items:center; gap:.5rem;">
+      <button id="density-toggle" title="Toggle IRC Density" style="background:none; border:none; cursor:pointer; font-size:1.1rem; padding:0; filter: grayscale(1);">⌨️</button>
+      <a href="/admin" id="admin-link" class="hidden" style="font-size:.75rem;color:#4cc9f0">Admin</a>
+    </div>
   </header>
   <div id="room-list"></div>
   <div id="sidebar-footer">
@@ -65,14 +128,30 @@
   <div id="room-header" class="hidden">
     <span id="room-title"></span>
     <span id="room-mode-badge">discussion</span>
-    <span id="participant-count" style="font-size:.8rem;color:#607090"></span>
+    <span id="participant-count" style="font-size:.8rem;color:var(--muted)"></span>
   </div>
 
   <div id="content">
-    <div id="participants">
-      <div id="no-room" style="color:#607090;margin-top:2rem;text-align:center">Select a channel to join</div>
-      <h2 class="hidden" id="participants-header">Participants</h2>
-      <div id="participant-list"></div>
+    <div id="no-room" style="color:var(--muted);margin-top:2rem;text-align:center;width:100%">Select a channel to join</div>
+    
+    <div id="room-main" class="hidden">
+      <div id="stage-area">
+        <h2 style="font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: 0 0 .75rem;">On Stage</h2>
+        <div id="stage"></div>
+      </div>
+
+      <div id="floor-container">
+        <h2>The Floor</h2>
+        <div id="floor"></div>
+      </div>
+    </div>
+
+    <div id="room-chat" class="hidden">
+      <div id="chat-messages"></div>
+      <div id="chat-input-area">
+        <input type="text" id="chat-input" placeholder="Message stream...">
+        <button class="btn btn-primary" id="chat-send" style="padding: .4rem .6rem;">Send</button>
+      </div>
     </div>
   </div>
 
@@ -82,6 +161,7 @@
     <span id="ptt-hint" class="hidden">Hold Caps Lock to talk</span>
     <div style="flex:1"></div>
     <div id="mod-controls" class="hidden">
+      <button class="btn btn-secondary" id="sync-btn">🔄 Sync State</button>
       <button class="btn btn-secondary" id="mode-btn">Switch to Broadcast</button>
       <button class="btn btn-secondary" id="rec-btn">⏺ Record</button>
     </div>
@@ -104,6 +184,15 @@ let activeEgressId = null;
 let currentRoomMode = "discussion";
 let pttMode = false;
 
+// Virtualization state
+let allParticipants = [];
+let floorItems = [];
+let activeSpeakerIdentities = new Set();
+const ITEM_HEIGHT_NORMAL = 40;
+const ITEM_HEIGHT_IRC = 24;
+let currentItemHeight = ITEM_HEIGHT_NORMAL;
+const BUFFER_COUNT = 5;
+
 async function init() {
   const resp = await fetch("/api/me");
   if (!resp.ok) { location.href = "/auth/login"; return; }
@@ -112,8 +201,12 @@ async function init() {
   if (me.role === "admin") document.getElementById("admin-link").classList.remove("hidden");
   if (me.role === "admin" || me.role === "moderator") {
     document.getElementById("mod-controls").classList.remove("hidden");
-    document.getElementById("participants").classList.add("mod-view");
+    document.getElementById("floor-container").classList.add("mod-view");
   }
+  
+  // Virtualization scroll listener
+  document.getElementById("floor-container").addEventListener("scroll", renderFloor);
+  
   await loadRooms();
 }
 
@@ -149,11 +242,18 @@ async function joinRoom(roomId, displayName, mode) {
   currentRoom = roomId;
   currentRoomMode = mode;
 
-  lkRoom = new LivekitClient.Room();
+  lkRoom = new LivekitClient.Room({
+    adaptiveStream: true,
+    dynacast: true,
+  });
   setupRoomEvents(lkRoom, roomId);
 
   try {
     await lkRoom.connect(LIVEKIT_WS_URL, token);
+    // Pre-publish microphone (muted) for instant PTT
+    await lkRoom.localParticipant.setMicrophoneEnabled(true);
+    const audioTrack = lkRoom.localParticipant.getTrack(LivekitClient.Track.Source.Microphone);
+    if (audioTrack) await audioTrack.track.setMuted(true);
   } catch (e) {
     setStatus("Connection failed: " + e.message);
     return;
@@ -163,39 +263,64 @@ async function joinRoom(roomId, displayName, mode) {
   document.getElementById("room-title").textContent = displayName;
   document.getElementById("controls").classList.remove("hidden");
   document.getElementById("no-room").style.display = "none";
-  document.getElementById("participants-header").classList.remove("hidden");
+  document.getElementById("room-main").classList.remove("hidden");
+  document.getElementById("room-chat").classList.remove("hidden");
   document.getElementById("mic-btn").disabled = false;
   updateModeUI(mode);
   setStatus("Connected to " + displayName);
 }
 
 function setupRoomEvents(room, roomId) {
-  room.on(LivekitClient.RoomEvent.ParticipantConnected, renderParticipants);
-  room.on(LivekitClient.RoomEvent.ParticipantDisconnected, renderParticipants);
+  const refresh = () => {
+    updateParticipantsList();
+    renderStage();
+    renderFloor();
+  };
+
+  room.on(LivekitClient.RoomEvent.ParticipantConnected, refresh);
+  room.on(LivekitClient.RoomEvent.ParticipantDisconnected, refresh);
+  room.on(LivekitClient.RoomEvent.ConnectionQualityChanged, refresh);
+  room.on(LivekitClient.RoomEvent.RoomMetadataChanged, (metadata) => {
+    try {
+      const data = JSON.parse(metadata);
+      if (data.mode) {
+        currentRoomMode = data.mode;
+        updateModeUI(data.mode);
+      }
+    } catch (e) { console.error("Failed to parse room metadata", e); }
+  });
   room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, pub, participant) => {
     if (track.kind === LivekitClient.Track.Kind.Audio) {
       const el = track.attach();
       el.id = "audio-" + participant.identity;
       document.getElementById("audio-container").appendChild(el);
+      
+      // Smart Bandwidth Guard: Set priority for privileged roles
+      try {
+        const meta = JSON.parse(participant.metadata || "{}");
+        if (["admin", "moderator", "operator"].includes(meta.role)) {
+          pub.setPriority(LivekitClient.Track.Priority.High);
+        }
+      } catch (e) { /* ignore malformed meta */ }
     }
-    renderParticipants();
+    refresh();
   });
   room.on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, pub, participant) => {
     track.detach().forEach(el => el.remove());
-    renderParticipants();
+    refresh();
   });
   room.on(LivekitClient.RoomEvent.ActiveSpeakersChanged, speakers => {
-    const speaking = new Set(speakers.map(s => s.identity));
-    document.querySelectorAll(".participant").forEach(el => {
-      el.classList.toggle("speaking", speaking.has(el.dataset.identity));
-    });
+    activeSpeakerIdentities = new Set(speakers.map(s => s.identity));
+    renderStage();
+    renderFloor();
   });
-  room.on(LivekitClient.RoomEvent.DataReceived, (payload) => {
+  room.on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
     const msg = JSON.parse(new TextDecoder().decode(payload));
     if (msg.type === "mode_change") updateModeUI(msg.mode);
     if (msg.type === "hand_raise" && msg.raised) showHandRaise(msg);
+    if (msg.type === "chat") appendChatMessage(participant.name || participant.identity, msg.message);
   });
-  room.on(LivekitClient.RoomEvent.LocalTrackPublished, renderParticipants);
+  room.on(LivekitClient.RoomEvent.LocalTrackPublished, refresh);
   room.on(LivekitClient.RoomEvent.Disconnected, (reason) => {
     setStatus("Disconnected: " + reason);
     document.getElementById("reconnect-banner").style.display = "block";
@@ -203,46 +328,177 @@ function setupRoomEvents(room, roomId) {
   });
 }
 
-async function attemptReconnect(roomId) {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt)));
-    try {
-      const resp = await fetch("/api/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ room_id: roomId }),
-      });
-      if (!resp.ok) continue;
-      const { token } = await resp.json();
-      await lkRoom.connect(LIVEKIT_WS_URL, token);
-      document.getElementById("reconnect-banner").style.display = "none";
-      setStatus("Reconnected");
-      return;
-    } catch (e) { /* retry */ }
-  }
-  setStatus("Reconnect failed — please rejoin manually");
+function appendChatMessage(name, text) {
+  const list = document.getElementById("chat-messages");
+  const div = document.createElement("div");
+  div.style.marginBottom = "0.5rem";
+  
+  const strong = document.createElement("strong");
+  strong.style.color = "var(--primary)";
+  strong.textContent = name;
+  
+  div.appendChild(strong);
+  div.appendChild(document.createTextNode(": " + text));
+  
+  list.appendChild(div);
+  list.scrollTop = list.scrollHeight;
 }
 
-function renderParticipants() {
-  if (!lkRoom) return;
-  const list = document.getElementById("participant-list");
-  list.innerHTML = "";
-  const all = [lkRoom.localParticipant, ...lkRoom.remoteParticipants.values()];
-  document.getElementById("participant-count").textContent = all.length + " online";
-  all.forEach(p => {
-    const isLocal = p === lkRoom.localParticipant;
-    const canPub = p.permissions?.canPublish ?? true;
-    const div = document.createElement("div");
-    div.className = "participant";
-    div.dataset.identity = p.identity;
-    div.innerHTML = `
-      <span class="name">${p.name || p.identity}${isLocal ? " (you)" : ""}</span>
-      ${!canPub ? '<span style="font-size:.75rem;color:#607090">🔇</span>' : ""}
-      <span class="role-badge">${p.metadata || "member"}</span>
-      ${!isLocal ? `<button class="mute-btn" onclick="muteParticipant('${p.identity}')">Mute</button>` : ""}
-    `;
-    list.appendChild(div);
+async function sendChat() {
+  const input = document.getElementById("chat-input");
+  const text = input.value.trim();
+  if (!text || !lkRoom) return;
+  
+  const msg = { type: "chat", message: text };
+  const encoded = new TextEncoder().encode(JSON.stringify(msg));
+  
+  // 1. Broadcast locally via LiveKit
+  await lkRoom.localParticipant.publishData(encoded, { reliable: true });
+  appendChatMessage("You", text);
+  
+  // 2. Bridge to Zulip via API
+  fetch(`/api/rooms/${currentRoom}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: text })
   });
+  
+  input.value = "";
+}
+
+document.getElementById("chat-send").addEventListener("click", sendChat);
+document.getElementById("chat-input").addEventListener("keypress", (e) => {
+  if (e.key === "Enter") sendChat();
+});
+
+function updateParticipantsList() {
+  if (!lkRoom) return;
+  allParticipants = [lkRoom.localParticipant, ...lkRoom.remoteParticipants.values()];
+  document.getElementById("participant-count").textContent = allParticipants.length + " online";
+  
+  // Group and sort by Sector
+  const sectors = {};
+  allParticipants.forEach(p => {
+    let sector = "General";
+    try {
+      const meta = JSON.parse(p.metadata || "{}");
+      sector = meta.sector || "General";
+    } catch (e) {}
+    if (!sectors[sector]) sectors[sector] = [];
+    sectors[sector].push(p);
+  });
+  
+  floorItems = [];
+  const sortedSectors = Object.keys(sectors).sort();
+  sortedSectors.forEach(sector => {
+    floorItems.push({ type: 'header', label: sector });
+    sectors[sector].sort((a, b) => (a.name || a.identity || "").localeCompare(b.name || b.identity || ""));
+    sectors[sector].forEach(p => {
+      floorItems.push({ type: 'participant', participant: p });
+    });
+  });
+
+  document.getElementById("floor").style.height = (floorItems.length * currentItemHeight) + "px";
+}
+
+function renderStage() {
+  const stage = document.getElementById("stage");
+  stage.innerHTML = "";
+  
+  // Stage shows active speakers (max 10)
+  const speakers = allParticipants
+    .filter(p => activeSpeakerIdentities.has(p.identity))
+    .slice(0, 10);
+    
+  speakers.forEach(p => {
+    const el = document.createElement("div");
+    el.className = "stage-item speaking";
+    const initial = (p.name || p.identity).charAt(0).toUpperCase();
+    el.innerHTML = `
+      <div class="avatar">${initial}</div>
+      <div style="font-weight:600;font-size:.9rem;">${p.name || p.identity}</div>
+      <div style="font-size:.7rem;color:var(--muted)">${p.metadata || "Member"}</div>
+    `;
+    stage.appendChild(el);
+  });
+}
+
+function renderFloor() {
+  const container = document.getElementById("floor-container");
+  const floor = document.getElementById("floor");
+  
+  const scrollTop = container.scrollTop;
+  const containerHeight = container.clientHeight;
+  
+  const startIndex = Math.max(0, Math.floor(scrollTop / currentItemHeight) - BUFFER_COUNT);
+  const endIndex = Math.min(floorItems.length - 1, Math.floor((scrollTop + containerHeight) / currentItemHeight) + BUFFER_COUNT);
+  
+  floor.innerHTML = "";
+  
+  for (let i = startIndex; i <= endIndex; i++) {
+    const item = floorItems[i];
+    const div = document.createElement("div");
+    div.style.top = (i * currentItemHeight) + "px";
+
+    if (item.type === 'header') {
+      div.className = "floor-header";
+      div.textContent = `Sector: ${item.label}`;
+    } else {
+      const p = item.participant;
+      const isLocal = p === lkRoom.localParticipant;
+      const isSpeaking = activeSpeakerIdentities.has(p.identity);
+      const canPub = p.permissions?.canPublish ?? true;
+      
+      // Connection Quality (0-5)
+      let qualityColor = "#9ca3af"; // Gray
+      if (p.connectionQuality === LivekitClient.ConnectionQuality.Excellent || p.connectionQuality === LivekitClient.ConnectionQuality.Good) qualityColor = "#22c55e"; // Green
+      else if (p.connectionQuality === LivekitClient.ConnectionQuality.Poor) qualityColor = "#eab308"; // Yellow
+      else if (p.connectionQuality === LivekitClient.ConnectionQuality.Lost) qualityColor = "#ef4444"; // Red
+
+      div.className = "floor-item" + (isSpeaking ? " speaking" : "");
+      div.dataset.identity = p.identity;
+      
+      let metaObj = {};
+      try { metaObj = JSON.parse(p.metadata || "{}"); } catch(e) {}
+      const role = metaObj.role || "member";
+
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "name";
+      nameSpan.textContent = (p.name || p.identity) + (isLocal ? " (you)" : "");
+
+      const qualityDot = document.createElement("span");
+      qualityDot.className = "quality-dot";
+      qualityDot.style.cssText = `width:8px;height:8px;border-radius:50%;background:${qualityColor}`;
+      qualityDot.title = `Quality: ${p.connectionQuality}`;
+
+      const roleBadge = document.createElement("span");
+      roleBadge.className = `role-badge ${role}`;
+      roleBadge.textContent = role;
+
+      div.appendChild(qualityDot);
+      div.appendChild(nameSpan);
+      
+      if (!canPub) {
+        const muteIcon = document.createElement("span");
+        muteIcon.style.fontSize = ".75rem";
+        muteIcon.style.color = "var(--muted)";
+        muteIcon.textContent = "🔇";
+        div.appendChild(muteIcon);
+      }
+      
+      div.appendChild(roleBadge);
+
+      if (!isLocal && (me.role === 'admin' || me.role === 'moderator')) {
+        const muteBtn = document.createElement("button");
+        muteBtn.className = "btn";
+        muteBtn.style.cssText = "padding:2px 6px;font-size:.7rem;background:var(--danger);margin-left:4px";
+        muteBtn.textContent = "Mute";
+        muteBtn.onclick = () => muteParticipant(p.identity);
+        div.appendChild(muteBtn);
+      }
+    }
+    floor.appendChild(div);
+  }
 }
 
 async function muteParticipant(identity) {
@@ -284,43 +540,52 @@ function showHandRaise(msg) {
 async function leaveRoom() {
   if (lkRoom) { await lkRoom.disconnect(); lkRoom = null; }
   document.getElementById("audio-container").innerHTML = "";
-  document.getElementById("participant-list").innerHTML = "";
+  document.getElementById("floor").innerHTML = "";
   document.getElementById("room-header").classList.add("hidden");
   document.getElementById("controls").classList.add("hidden");
   document.getElementById("no-room").style.display = "block";
-  document.getElementById("participants-header").classList.add("hidden");
+  document.getElementById("stage-area").classList.add("hidden");
+  document.getElementById("floor-container").classList.add("hidden");
   document.getElementById("reconnect-banner").style.display = "none";
   currentRoom = null;
   setStatus("Not connected");
   document.querySelectorAll(".room-item").forEach(el => el.classList.remove("active"));
+  document.body.classList.remove("hot-mic");
 }
 
 function setStatus(msg) {
   document.getElementById("status-bar").textContent = msg;
 }
 
-// Mic toggle
-document.getElementById("mic-btn").addEventListener("click", async () => {
+// Mic toggle (Fast PTT via Track Muting)
+async function toggleMic(enabled) {
   if (!lkRoom) return;
-  const enabled = lkRoom.localParticipant.isMicrophoneEnabled;
-  await lkRoom.localParticipant.setMicrophoneEnabled(!enabled);
-  document.getElementById("mic-btn").textContent = enabled ? "🎤 Unmute" : "🎤 Mute";
-  document.getElementById("mic-btn").classList.toggle("active", !enabled);
+  const audioTrack = lkRoom.localParticipant.getTrack(LivekitClient.Track.Source.Microphone);
+  if (audioTrack) {
+    await audioTrack.track.setMuted(!enabled);
+    document.getElementById("mic-btn").textContent = enabled ? "🎤 Mute" : "🎤 Unmute";
+    document.getElementById("mic-btn").classList.toggle("active", enabled);
+    document.body.classList.toggle("hot-mic", enabled);
+  }
+}
+
+document.getElementById("mic-btn").addEventListener("click", async () => {
+  const audioTrack = lkRoom?.localParticipant.getTrack(LivekitClient.Track.Source.Microphone);
+  const isMuted = audioTrack ? audioTrack.isMuted : true;
+  await toggleMic(isMuted);
 });
 
 // PTT — Caps Lock
 document.addEventListener("keydown", async (e) => {
   if (!lkRoom || !pttMode) return;
   if (e.code === "CapsLock" && !e.repeat) {
-    await lkRoom.localParticipant.setMicrophoneEnabled(true);
-    document.getElementById("mic-btn").classList.add("active");
+    await toggleMic(true);
   }
 });
 document.addEventListener("keyup", async (e) => {
   if (!lkRoom || !pttMode) return;
   if (e.code === "CapsLock") {
-    await lkRoom.localParticipant.setMicrophoneEnabled(false);
-    document.getElementById("mic-btn").classList.remove("active");
+    await toggleMic(false);
   }
 });
 
@@ -329,6 +594,43 @@ document.getElementById("hand-btn").addEventListener("click", () => {
   if (!lkRoom) return;
   const msg = JSON.stringify({ type: "hand_raise", user_id: me.user_id, display_name: me.display_name, raised: true });
   lkRoom.localParticipant.publishData(new TextEncoder().encode(msg), { reliable: true });
+});
+
+// Density toggle
+document.getElementById("density-toggle").addEventListener("click", () => {
+  document.body.classList.toggle("density-irc");
+  const isIRC = document.body.classList.contains("density-irc");
+  currentItemHeight = isIRC ? ITEM_HEIGHT_IRC : ITEM_HEIGHT_NORMAL;
+  document.getElementById("density-toggle").style.filter = isIRC ? "none" : "grayscale(1)";
+  
+  if (lkRoom) {
+    updateParticipantsList();
+    renderFloor();
+  }
+});
+
+// Sync State
+document.getElementById("sync-btn").addEventListener("click", async () => {
+  if (!currentRoom) return;
+  const btn = document.getElementById("sync-btn");
+  const oldText = btn.textContent;
+  btn.textContent = "⏳ Syncing...";
+  btn.disabled = true;
+  
+  try {
+    await fetch(`/api/rooms/${currentRoom}/sync`, { method: "POST" });
+    setTimeout(() => {
+      btn.textContent = oldText;
+      btn.disabled = false;
+    }, 1000);
+  } catch (e) {
+    console.error("Sync failed", e);
+    btn.textContent = "❌ Failed";
+    setTimeout(() => {
+      btn.textContent = oldText;
+      btn.disabled = false;
+    }, 2000);
+  }
 });
 
 // Mode toggle

@@ -10,8 +10,8 @@
     .card { background: #16213e; border-radius: 8px; padding: 2rem; width: 100%; max-width: 380px; box-shadow: 0 4px 24px rgba(0,0,0,0.4); }
     h1 { margin: 0 0 1.5rem; font-size: 1.4rem; color: #4cc9f0; }
     label { display: block; font-size: .85rem; margin-bottom: .3rem; color: #a0a0b0; }
-    input { width: 100%; padding: .6rem .8rem; background: #0f3460; border: 1px solid #2a4a7f; border-radius: 4px; color: #e0e0e0; font-size: 1rem; margin-bottom: 1rem; }
-    input:focus { outline: none; border-color: #4cc9f0; }
+    input, select { width: 100%; padding: .6rem .8rem; background: #0f3460; border: 1px solid #2a4a7f; border-radius: 4px; color: #e0e0e0; font-size: 1rem; margin-bottom: 1rem; }
+    input:focus, select:focus { outline: none; border-color: #4cc9f0; }
     button { width: 100%; padding: .75rem; background: #4361ee; border: none; border-radius: 4px; color: #fff; font-size: 1rem; cursor: pointer; }
     button:hover { background: #3a0ca3; }
     .error { background: #4a1942; color: #ff6b6b; padding: .6rem .8rem; border-radius: 4px; margin-bottom: 1rem; font-size: .9rem; }
@@ -27,6 +27,27 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label for="display_name">Display name</label>
       <input type="text" id="display_name" name="display_name" required autocomplete="off" maxlength="64">
+      
+      <label for="sector">Sector</label>
+      <select id="sector" name="sector">
+        <option value="Sector 01">Sector 01</option>
+        <option value="Sector 02">Sector 02</option>
+        <option value="Sector 03">Sector 03</option>
+        <option value="Sector 04">Sector 04</option>
+        <option value="Sector 05">Sector 05</option>
+        <option value="Sector 06">Sector 06</option>
+        <option value="Sector 07">Sector 07</option>
+        <option value="Sector 08">Sector 08</option>
+        <option value="Sector 09">Sector 09</option>
+        <option value="Sector 10">Sector 10</option>
+        <option value="Sector 11">Sector 11</option>
+        <option value="Sector 12">Sector 12</option>
+        <option value="Sector 13">Sector 13</option>
+        <option value="Sector 14">Sector 14</option>
+        <option value="Sector 15">Sector 15</option>
+        <option value="Sector 16">Sector 16</option>
+      </select>
+
       <label for="passphrase">Passphrase</label>
       <input type="password" id="passphrase" name="passphrase" required>
       <button type="submit">Join</button>

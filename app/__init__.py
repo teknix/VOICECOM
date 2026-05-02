@@ -31,8 +31,8 @@ def create_app():
     app.register_blueprint(admin_bp)
 
     # Exempt JSON API and webhook routes from CSRF — authenticated by session
-    csrf.exempt(rooms_bp)
-    csrf.exempt(recordings_bp)
+    # csrf.exempt(rooms_bp)
+    # csrf.exempt(recordings_bp)
     csrf.exempt(webhook_bp)
 
     @app.route("/")

@@ -18,9 +18,27 @@ def mod_required(f):
     def decorated(*args, **kwargs):
         if "user_id" not in session:
             return jsonify({"error": "Unauthorized"}), 401
-        if session.get("role") not in ("moderator", "admin"):
-            return jsonify({"error": "Forbidden"}), 403
-        return f(*args, **kwargs)
+        
+        # Room ID might be in kwargs or in JSON body
+        room_id = kwargs.get("room_id")
+        if not room_id and request.is_json:
+            try:
+                room_id = request.get_json(silent=True).get("room_id")
+            except Exception: pass
+            
+        role = session.get("role")
+        
+        if role in ("moderator", "admin"):
+            return f(*args, **kwargs)
+            
+        # Check for per-room operator
+        if role == "operator" and room_id:
+            from .models import db
+            room = db.rooms.find_one({"_id": room_id, "operator_ids": session["user_id"]})
+            if room:
+                return f(*args, **kwargs)
+                
+        return jsonify({"error": "Forbidden"}), 403
     return decorated
 
 
