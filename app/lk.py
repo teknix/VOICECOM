@@ -1,17 +1,30 @@
 import asyncio
+import threading
 from livekit import api
 from .config import LIVEKIT_INTERNAL_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
 
+# Persistent background loop thread
+_loop = None
+_thread = None
+
+def _start_background_loop():
+    global _loop
+    _loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(_loop)
+    _loop.run_forever()
 
 def lk_run(coro):
-    """Run an async LiveKit SDK coroutine synchronously. Safe from gevent greenlets."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-        asyncio.set_event_loop(None)
+    """Run an async LiveKit SDK coroutine in the persistent background loop."""
+    global _loop, _thread
+    if _loop is None or not _thread.is_alive():
+        _thread = threading.Thread(target=_start_background_loop, daemon=True)
+        _thread.start()
+        # Wait for loop to be ready
+        import time
+        while _loop is None: time.sleep(0.01)
+
+    future = asyncio.run_coroutine_threadsafe(coro, _loop)
+    return future.result()
 
 
 async def _list_participants(room_name: str):
