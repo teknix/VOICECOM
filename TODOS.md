@@ -50,8 +50,9 @@ room.on(LivekitClient.RoomEvent.ActiveSpeakersChanged, (speakers) => {
 
 **Explicitly out of scope for v1.** Session keys (`user_id`, `display_name`, `role`) are already named to match the OIDC flow. Replace `Phase 2` entirely; no other code changes required.
 
-## Post-v1 Optimization (from Engineering Review)
-- [ ] **Configurable Hotkeys**: Allow users to remap PTT from Caps Lock.
-- [ ] **Recording Disk Cleanup**: Cron job to purge recordings older than 30 days.
-- [ ] **Partial Mode Recovery**: Implement state reconciliation for participants who miss the Data Channel mode-switch message.
-- [ ] **Zulip Lifecycle Log**: (Deferred from CEO Plan) Event aggregation for Join/Leave audit logging.
+## Completed
+- [x] **Sector Grouping**: Organized 2,000-user floor list into 16 US sectors. (v0.1.0.1, 2026-05-01)
+- [x] **IRC Density Mode**: High-density 24px layout for large-scale monitoring. (v0.1.0.1, 2026-05-01)
+- [x] **Moderator Sync**: Force-broadcast state reconciliation via O(1) metadata. (v0.1.0.1, 2026-05-01)
+- [x] **XSS/Security Audit**: Secured chat, identity rendering, and hardened access control. (v0.1.0.1, 2026-05-01)
+- [x] **Voice Activity Indicator**: Real-time speaker highlighting on Stage and Floor. (v0.1.0.1, 2026-05-01)
