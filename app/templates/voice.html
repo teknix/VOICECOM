@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>VoiceCom</title>
   <style>
     :root {
@@ -233,7 +234,10 @@ async function joinRoom(roomId, displayName, mode) {
 
   const resp = await fetch("/api/token", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { 
+      "Content-Type": "application/json",
+      "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content
+    },
     body: JSON.stringify({ room_id: roomId }),
   });
   if (!resp.ok) { setStatus("Token error"); return; }
@@ -359,7 +363,7 @@ async function sendChat() {
   // 2. Bridge to Zulip via API
   fetch(`/api/rooms/${currentRoom}/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-CSRFToken": document.querySelector("meta[name=\"csrf-token\"]").content },
     body: JSON.stringify({ message: text })
   });
   
@@ -504,7 +508,7 @@ function renderFloor() {
 async function muteParticipant(identity) {
   await fetch(`/api/rooms/${currentRoom}/mute`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-CSRFToken": document.querySelector("meta[name=\"csrf-token\"]").content },
     body: JSON.stringify({ user_id: identity, muted: true }),
   });
 }
@@ -551,6 +555,23 @@ async function leaveRoom() {
   setStatus("Not connected");
   document.querySelectorAll(".room-item").forEach(el => el.classList.remove("active"));
   document.body.classList.remove("hot-mic");
+}
+
+async function attemptReconnect(roomId) {
+  let attempts = 0;
+  while (attempts < 5 && (!lkRoom || lkRoom.state === 'disconnected')) {
+    attempts++;
+    setStatus(`Reconnecting (Attempt ${attempts})...`);
+    try {
+      await joinRoom(roomId, me.display_name, currentRoomMode);
+      document.getElementById("reconnect-banner").style.display = "none";
+      return;
+    } catch (e) {
+      console.error("Reconnect failed", e);
+      await new Promise(r => setTimeout(r, 2000 * attempts));
+    }
+  }
+  setStatus("Failed to reconnect. Please refresh the page.");
 }
 
 function setStatus(msg) {
@@ -638,7 +659,7 @@ document.getElementById("mode-btn").addEventListener("click", async () => {
   const newMode = currentRoomMode === "discussion" ? "broadcast" : "discussion";
   await fetch(`/api/rooms/${currentRoom}/mode`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-CSRFToken": document.querySelector("meta[name=\"csrf-token\"]").content },
     body: JSON.stringify({ mode: newMode }),
   });
 });
@@ -649,7 +670,7 @@ document.getElementById("rec-btn").addEventListener("click", async () => {
   if (!activeEgressId) {
     const resp = await fetch("/api/recordings/start", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-CSRFToken": document.querySelector("meta[name=\"csrf-token\"]").content },
       body: JSON.stringify({ room_id: currentRoom }),
     });
     if (resp.ok) {
@@ -661,7 +682,7 @@ document.getElementById("rec-btn").addEventListener("click", async () => {
   } else {
     await fetch("/api/recordings/stop", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-CSRFToken": document.querySelector("meta[name=\"csrf-token\"]").content },
       body: JSON.stringify({ egress_id: activeEgressId }),
     });
     activeEgressId = null;
