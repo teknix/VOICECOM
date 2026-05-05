@@ -37,13 +37,18 @@
       100% { box-shadow: inset 0 0 15px 5px var(--hot-mic); }
     }
 
-    #sidebar { width: 220px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+    #sidebar { width: 220px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; transition: transform 0.3s; z-index: 1500; }
     
     @media (max-width: 768px) {
-      #sidebar { display: none; }
+      #sidebar { position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-100%); }
+      #sidebar.open { transform: translateX(0); }
       #content { flex-direction: column; }
       #room-chat { min-width: 100%; height: 300px; }
+      #room-header { padding-left: 3.5rem; }
     }
+
+    #mobile-toggle { position: absolute; left: 1rem; top: .75rem; background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text); display: none; z-index: 1600; }
+    @media (max-width: 768px) { #mobile-toggle { display: block; } }
 
     #sidebar header { padding: .75rem 1rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
     #room-list { flex: 1; overflow-y: auto; padding: .5rem 0; }
@@ -110,6 +115,9 @@
 </head>
 <body>
 <div id="reconnect-banner" style="display:none;background:var(--danger);color:#fff;text-align:center;padding:.5rem;font-size:.85rem;">Reconnecting…</div>
+
+<div id="sidebar-overlay" class="hidden" style="position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1400;"></div>
+<button id="mobile-toggle">☰</button>
 
 <div id="sidebar">
   <header>
@@ -227,6 +235,10 @@ async function loadRooms() {
 }
 
 async function joinRoom(roomId, displayName, mode) {
+  if (window.innerWidth <= 768) {
+    document.getElementById("sidebar").classList.remove("open");
+    document.getElementById("sidebar-overlay").classList.add("hidden");
+  }
   if (lkRoom) await leaveRoom();
 
   document.querySelectorAll(".room-item").forEach(el => el.classList.remove("active"));
@@ -256,8 +268,8 @@ async function joinRoom(roomId, displayName, mode) {
     await lkRoom.connect(LIVEKIT_WS_URL, token);
     // Pre-publish microphone (muted) for instant PTT
     await lkRoom.localParticipant.setMicrophoneEnabled(true);
-    const audioTrack = lkRoom.localParticipant.getTrack(LivekitClient.Track.Source.Microphone);
-    if (audioTrack) await audioTrack.track.setMuted(true);
+    const audioTrack = lkRoom.localParticipant.getTrackPublication(LivekitClient.Track.Source.Microphone);
+    if (audioTrack) await audioTrack.mute();
   } catch (e) {
     setStatus("Connection failed: " + e.message);
     return;
@@ -269,6 +281,8 @@ async function joinRoom(roomId, displayName, mode) {
   document.getElementById("no-room").style.display = "none";
   document.getElementById("room-main").classList.remove("hidden");
   document.getElementById("room-chat").classList.remove("hidden");
+  document.getElementById("stage-area").classList.remove("hidden");
+  document.getElementById("floor-container").classList.remove("hidden");
   document.getElementById("mic-btn").disabled = false;
   updateModeUI(mode);
   setStatus("Connected to " + displayName);
@@ -324,7 +338,15 @@ function setupRoomEvents(room, roomId) {
     if (msg.type === "hand_raise" && msg.raised) showHandRaise(msg);
     if (msg.type === "chat") appendChatMessage(participant.name || participant.identity, msg.message);
   });
-  room.on(LivekitClient.RoomEvent.LocalTrackPublished, refresh);
+  room.on(LivekitClient.RoomEvent.LocalTrackPublished, (pub) => {
+    if (roomId === "echo-test" && pub.track.kind === LivekitClient.Track.Kind.Audio) {
+      const el = pub.track.attach();
+      el.id = "echo-loopback";
+      el.volume = 0.5; // Slightly lower to avoid feedback screeching
+      document.getElementById("audio-container").appendChild(el);
+    }
+    refresh();
+  });
   room.on(LivekitClient.RoomEvent.Disconnected, (reason) => {
     setStatus("Disconnected: " + reason);
     document.getElementById("reconnect-banner").style.display = "block";
@@ -545,9 +567,12 @@ async function leaveRoom() {
   if (lkRoom) { await lkRoom.disconnect(); lkRoom = null; }
   document.getElementById("audio-container").innerHTML = "";
   document.getElementById("floor").innerHTML = "";
+  document.getElementById("chat-messages").innerHTML = "";
   document.getElementById("room-header").classList.add("hidden");
   document.getElementById("controls").classList.add("hidden");
   document.getElementById("no-room").style.display = "block";
+  document.getElementById("room-main").classList.add("hidden");
+  document.getElementById("room-chat").classList.add("hidden");
   document.getElementById("stage-area").classList.add("hidden");
   document.getElementById("floor-container").classList.add("hidden");
   document.getElementById("reconnect-banner").style.display = "none";
@@ -581,9 +606,10 @@ function setStatus(msg) {
 // Mic toggle (Fast PTT via Track Muting)
 async function toggleMic(enabled) {
   if (!lkRoom) return;
-  const audioTrack = lkRoom.localParticipant.getTrack(LivekitClient.Track.Source.Microphone);
+  const audioTrack = lkRoom.localParticipant.getTrackPublication(LivekitClient.Track.Source.Microphone);
   if (audioTrack) {
-    await audioTrack.track.setMuted(!enabled);
+    if (enabled) await audioTrack.unmute();
+    else await audioTrack.mute();
     document.getElementById("mic-btn").textContent = enabled ? "🎤 Mute" : "🎤 Unmute";
     document.getElementById("mic-btn").classList.toggle("active", enabled);
     document.body.classList.toggle("hot-mic", enabled);
@@ -591,7 +617,7 @@ async function toggleMic(enabled) {
 }
 
 document.getElementById("mic-btn").addEventListener("click", async () => {
-  const audioTrack = lkRoom?.localParticipant.getTrack(LivekitClient.Track.Source.Microphone);
+  const audioTrack = lkRoom?.localParticipant.getTrackPublication(LivekitClient.Track.Source.Microphone);
   const isMuted = audioTrack ? audioTrack.isMuted : true;
   await toggleMic(isMuted);
 });
@@ -693,6 +719,17 @@ document.getElementById("rec-btn").addEventListener("click", async () => {
 
 // Leave
 document.getElementById("leave-btn").addEventListener("click", leaveRoom);
+
+// Mobile Toggle
+document.getElementById("mobile-toggle").onclick = () => {
+  document.getElementById("sidebar").classList.add("open");
+  document.getElementById("sidebar-overlay").classList.remove("hidden");
+};
+
+document.getElementById("sidebar-overlay").onclick = () => {
+  document.getElementById("sidebar").classList.remove("open");
+  document.getElementById("sidebar-overlay").classList.add("hidden");
+};
 
 init();
 </script>
