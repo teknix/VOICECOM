@@ -17,7 +17,11 @@ services:
     image: livekit/livekit-server:latest
     restart: unless-stopped
     command: >
-      sh -c "EXTERNAL_IP=$$(curl -s https://api.ipify.org || curl -s https://ifconfig.me);
+      sh -c "if [ \"$$DEV_MODE\" = \"true\" ]; then
+               EXTERNAL_IP=\"127.0.0.1\";
+             else
+               EXTERNAL_IP=$$(curl -s https://api.ipify.org || curl -s https://ifconfig.me);
+             fi;
              /livekit-server --config /etc/livekit.yaml --node-ip $$EXTERNAL_IP"
     volumes:
       - ./livekit.yaml:/etc/livekit.yaml:ro
@@ -46,7 +50,11 @@ services:
     image: coturn/coturn:latest
     restart: unless-stopped
     command: >
-      sh -c "EXTERNAL_IP=$$(curl -s https://api.ipify.org || curl -s https://ifconfig.me);
+      sh -c "if [ \"$$DEV_MODE\" = \"true\" ]; then
+               EXTERNAL_IP=\"127.0.0.1\";
+             else
+               EXTERNAL_IP=$$(curl -s https://api.ipify.org || curl -s https://ifconfig.me);
+             fi;
              turnserver -c /etc/coturn/turnserver.conf --external-ip $$EXTERNAL_IP --user=turnuser:turnpass --realm=voicecom"
     ports:
       - "3478:3478/udp"
