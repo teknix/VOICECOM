@@ -16,6 +16,7 @@ services:
   livekit:
     image: livekit/livekit-server:latest
     restart: unless-stopped
+    env_file: .env
     command: >
       sh -c "if [ \"$$DEV_MODE\" = \"true\" ]; then
                EXTERNAL_IP=\"127.0.0.1\";

@@ -7,14 +7,14 @@ rtc:
   # clients outside the Docker host get no audio.
   # Option A: use_external_ip: true  (if server has a routable public IP)
   # Option B: node_ip: 192.168.1.x  (explicit LAN/private IP)
-  use_external_ip: false  # change to true OR set node_ip before first deploy
-  # node_ip: 192.168.1.x
+  use_external_ip: false
+  node_ip: 192.168.3.205
   turn_servers:
     - host: coturn
       port: 3478
       protocol: udp
-      username: ${COTURN_USER}
-      credential: ${COTURN_PASS}
+      username: turnuser
+      credential: turnpass
 
 redis:
   address: redis:6379
