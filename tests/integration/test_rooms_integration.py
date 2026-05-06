@@ -14,7 +14,7 @@ def test_token_unknown_room_returns_404(authed_client):
 
 
 def test_mode_toggle_livekit_first_db_unchanged_on_livekit_failure(mod_client, mock_mongo, sample_room):
-    with patch("app.rooms.lk.list_participants", side_effect=Exception("LK down")):
+    with patch("app.rooms.lk.update_room_metadata", side_effect=Exception("LK down")):
         resp = mod_client.post(f"/api/rooms/{sample_room}/mode", json={"mode": "broadcast"})
     assert resp.status_code == 502
     room = mock_mongo.rooms.find_one({"_id": sample_room})
@@ -22,8 +22,7 @@ def test_mode_toggle_livekit_first_db_unchanged_on_livekit_failure(mod_client, m
 
 
 def test_mode_toggle_updates_db_on_success(mod_client, mock_mongo, sample_room):
-    with patch("app.rooms.lk.list_participants", return_value=[]), \
-         patch("app.rooms.lk.update_participant"):
+    with patch("app.rooms.lk.update_room_metadata"):
         resp = mod_client.post(f"/api/rooms/{sample_room}/mode", json={"mode": "broadcast"})
     assert resp.status_code == 200
     room = mock_mongo.rooms.find_one({"_id": sample_room})

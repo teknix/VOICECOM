@@ -66,6 +66,18 @@ async def _update_room_metadata(room_name: str, metadata: str):
         ))
 
 
+async def _get_room_metadata(room_name: str):
+    async with api.LiveKitAPI(
+        url=LIVEKIT_INTERNAL_URL,
+        api_key=LIVEKIT_API_KEY,
+        api_secret=LIVEKIT_API_SECRET,
+    ) as lk:
+        rooms = await lk.room.list_rooms(api.ListRoomsRequest(names=[room_name]))
+        if rooms.rooms:
+            return rooms.rooms[0].metadata
+        return None
+
+
 async def _list_rooms():
     async with api.LiveKitAPI(
         url=LIVEKIT_INTERNAL_URL,
@@ -100,6 +112,27 @@ async def _stop_egress(egress_id: str):
         await lk.egress.stop_egress(api.StopEgressRequest(egress_id=egress_id))
 
 
+async def _remove_participant(room_name: str, identity: str):
+    async with api.LiveKitAPI(
+        url=LIVEKIT_INTERNAL_URL,
+        api_key=LIVEKIT_API_KEY,
+        api_secret=LIVEKIT_API_SECRET,
+    ) as lk:
+        await lk.room.remove_participant(api.RemoveParticipantRequest(
+            room=room_name,
+            identity=identity,
+        ))
+
+
+async def _delete_room(room_name: str):
+    async with api.LiveKitAPI(
+        url=LIVEKIT_INTERNAL_URL,
+        api_key=LIVEKIT_API_KEY,
+        api_secret=LIVEKIT_API_SECRET,
+    ) as lk:
+        await lk.room.delete_room(api.DeleteRoomRequest(room=room_name))
+
+
 def list_participants(room_name: str):
     return lk_run(_list_participants(room_name))
 
@@ -110,6 +143,10 @@ def update_participant(room_name: str, identity: str, can_publish: bool, can_sub
 
 def update_room_metadata(room_name: str, metadata: str):
     lk_run(_update_room_metadata(room_name, metadata))
+
+
+def get_room_metadata(room_name: str) -> str:
+    return lk_run(_get_room_metadata(room_name))
 
 
 def list_rooms_participants() -> dict:
@@ -125,3 +162,11 @@ def start_egress(room_name: str, filepath: str) -> str:
 
 def stop_egress(egress_id: str):
     lk_run(_stop_egress(egress_id))
+
+
+def remove_participant(room_name: str, identity: str):
+    lk_run(_remove_participant(room_name, identity))
+
+
+def delete_room(room_name: str):
+    lk_run(_delete_room(room_name))

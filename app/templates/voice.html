@@ -78,7 +78,11 @@
     #stage:empty::after { content: "No one is speaking"; color: var(--muted); font-size: .85rem; padding: 1rem; text-align: center; width: 100%; grid-column: 1/-1; }
     .stage-item { background: var(--surface); border: 2px solid var(--border); border-radius: 8px; padding: 1rem; text-align: center; transition: border-color 0.2s; }
     .stage-item.speaking { border-color: var(--primary); box-shadow: 0 0 10px var(--primary); }
-    .stage-item .avatar { width: 48px; height: 48px; background: var(--muted); border-radius: 50%; margin: 0 auto .5rem; line-height: 48px; font-weight: bold; font-size: 1.2rem; }
+    .stage-item .avatar { 
+      width: 48px; height: 48px; background: var(--muted); border-radius: 50%; 
+      margin: 0 auto .5rem; line-height: 48px; font-weight: bold; font-size: 1.2rem; 
+      background-size: cover; background-position: center;
+    }
 
     /* Floor: Virtualized list */
     #floor-container { flex: 1; overflow-y: auto; border-top: 1px solid var(--border); padding-top: 1rem; }
@@ -86,6 +90,7 @@
     #floor { display: flex; flex-direction: column; min-height: 2000px; position: relative; } /* height set dynamically */
     .floor-item { display: flex; align-items: center; gap: .6rem; padding: .4rem .6rem; border-radius: 4px; font-size: .9rem; position: absolute; left: 0; right: 0; height: 40px; }
     .floor-item.speaking { background: rgba(76, 201, 240, .12); }
+    .floor-item .avatar { width: 24px; height: 24px; border-radius: 50%; background: var(--muted); background-size: cover; background-position: center; line-height: 24px; text-align: center; font-weight: bold; font-size: 0.7rem; }
     .floor-item .name { flex: 1; }
     .floor-item .role-badge { font-size: .7rem; padding: .15rem .4rem; border-radius: 3px; background: var(--surface); border: 1px solid var(--border); }
     .floor-item .role-badge.admin { background: #7209b7; color: white; }
@@ -109,6 +114,8 @@
     .btn-danger { background: var(--danger); color: #fff; }
     
     #mic-btn.active { background: #166534; color: white; }
+    #god-mic-btn.active { background: #ef4444 !important; color: white; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
     #status-bar { padding: .4rem 1.25rem; background: var(--surface); font-size: .75rem; color: var(--muted); border-top: 1px solid var(--border); }
     .hidden { display: none !important; }
   </style>
@@ -170,6 +177,7 @@
     <span id="ptt-hint" class="hidden">Hold Caps Lock to talk</span>
     <div style="flex:1"></div>
     <div id="mod-controls" class="hidden">
+      <button class="btn" id="god-mic-btn" style="background:#7209b7">📢 God Mic</button>
       <button class="btn btn-secondary" id="sync-btn">🔄 Sync State</button>
       <button class="btn btn-secondary" id="mode-btn">Switch to Broadcast</button>
       <button class="btn btn-secondary" id="rec-btn">⏺ Record</button>
@@ -189,6 +197,7 @@ const LIVEKIT_WS_URL = "{{ livekit_url }}";
 let me = null;
 let currentRoom = null;
 let lkRoom = null;
+let globalRoom = null;
 let activeEgressId = null;
 let currentRoomMode = "discussion";
 let pttMode = false;
@@ -216,7 +225,15 @@ async function init() {
   // Virtualization scroll listener
   document.getElementById("floor-container").addEventListener("scroll", renderFloor);
   
-  await loadRooms();
+  const rooms = await loadRooms();
+
+  // Auto-join if room in URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const autoRoom = urlParams.get('room');
+  if (autoRoom) {
+    const room = rooms.find(r => r._id === autoRoom);
+    if (room) joinRoom(room._id, room.display_name, room.mode);
+  }
 }
 
 async function loadRooms() {
@@ -232,6 +249,7 @@ async function loadRooms() {
     el.onclick = () => joinRoom(room._id, room.display_name, room.mode);
     list.appendChild(el);
   });
+  return rooms;
 }
 
 async function joinRoom(roomId, displayName, mode) {
@@ -273,6 +291,26 @@ async function joinRoom(roomId, displayName, mode) {
   } catch (e) {
     setStatus("Connection failed: " + e.message);
     return;
+  }
+
+  // Join Global Announcement room as subscribe-only (unless admin)
+  if (roomId !== "global-announcement") {
+    try {
+      const gResp = await fetch("/api/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content },
+        body: JSON.stringify({ room_id: "global-announcement" })
+      });
+      if (gResp.ok) {
+        const { token: gToken } = await gResp.json();
+        globalRoom = new LivekitClient.Room();
+        setupRoomEvents(globalRoom, "global-announcement");
+        await globalRoom.connect(LIVEKIT_WS_URL, gToken);
+        console.log("Joined Global Announcement");
+      }
+    } catch (ge) {
+      console.warn("Global room join failed:", ge);
+    }
   }
 
   document.getElementById("room-header").classList.remove("hidden");
@@ -440,10 +478,15 @@ function renderStage() {
     const el = document.createElement("div");
     el.className = "stage-item speaking";
     const initial = (p.name || p.identity).charAt(0).toUpperCase();
+    
+    let metaObj = {};
+    try { metaObj = JSON.parse(p.metadata || "{}"); } catch(e) {}
+    const avatarUrl = metaObj.avatar_url;
+
     el.innerHTML = `
-      <div class="avatar">${initial}</div>
+      <div class="avatar" ${avatarUrl ? `style="background-image: url('${avatarUrl}'); color: transparent;"` : ""}>${avatarUrl ? "" : initial}</div>
       <div style="font-weight:600;font-size:.9rem;">${p.name || p.identity}</div>
-      <div style="font-size:.7rem;color:var(--muted)">${p.metadata || "Member"}</div>
+      <div style="font-size:.7rem;color:var(--muted)">${metaObj.role || "Member"}</div>
     `;
     stage.appendChild(el);
   });
@@ -492,6 +535,16 @@ function renderFloor() {
       nameSpan.className = "name";
       nameSpan.textContent = (p.name || p.identity) + (isLocal ? " (you)" : "");
 
+      const avatarDiv = document.createElement("div");
+      avatarDiv.className = "avatar";
+      const initial = (p.name || p.identity).charAt(0).toUpperCase();
+      if (metaObj.avatar_url) {
+        avatarDiv.style.backgroundImage = `url('${metaObj.avatar_url}')`;
+        avatarDiv.style.color = "transparent";
+      } else {
+        avatarDiv.textContent = initial;
+      }
+
       const qualityDot = document.createElement("span");
       qualityDot.className = "quality-dot";
       qualityDot.style.cssText = `width:8px;height:8px;border-radius:50%;background:${qualityColor}`;
@@ -502,6 +555,7 @@ function renderFloor() {
       roleBadge.textContent = role;
 
       div.appendChild(qualityDot);
+      div.appendChild(avatarDiv);
       div.appendChild(nameSpan);
       
       if (!canPub) {
@@ -565,6 +619,7 @@ function showHandRaise(msg) {
 
 async function leaveRoom() {
   if (lkRoom) { await lkRoom.disconnect(); lkRoom = null; }
+  if (globalRoom) { await globalRoom.disconnect(); globalRoom = null; }
   document.getElementById("audio-container").innerHTML = "";
   document.getElementById("floor").innerHTML = "";
   document.getElementById("chat-messages").innerHTML = "";
@@ -615,6 +670,27 @@ async function toggleMic(enabled) {
     document.body.classList.toggle("hot-mic", enabled);
   }
 }
+
+async function toggleGodMic(enabled) {
+  if (!globalRoom) return;
+  const audioTrack = globalRoom.localParticipant.getTrackPublication(LivekitClient.Track.Source.Microphone);
+  if (!audioTrack) {
+    await globalRoom.localParticipant.setMicrophoneEnabled(true);
+  }
+  const pub = globalRoom.localParticipant.getTrackPublication(LivekitClient.Track.Source.Microphone);
+  if (pub) {
+    if (enabled) await pub.unmute();
+    else await pub.mute();
+    document.getElementById("god-mic-btn").classList.toggle("active", enabled);
+    document.getElementById("god-mic-btn").textContent = enabled ? "📢 God Mic ON" : "📢 God Mic";
+  }
+}
+
+document.getElementById("god-mic-btn").addEventListener("click", async () => {
+  const audioTrack = globalRoom?.localParticipant.getTrackPublication(LivekitClient.Track.Source.Microphone);
+  const isMuted = audioTrack ? audioTrack.isMuted : true;
+  await toggleGodMic(isMuted);
+});
 
 document.getElementById("mic-btn").addEventListener("click", async () => {
   const audioTrack = lkRoom?.localParticipant.getTrackPublication(LivekitClient.Track.Source.Microphone);

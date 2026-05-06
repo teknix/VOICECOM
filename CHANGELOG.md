@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.1.0.2] - 2026-05-03
+### Added
+- **PTT Key Configuration**: Added keyboard shortcut settings panel with localStorage persistence.
+- **Hand Raise Queue**: Implemented timestamp-based queue and moderator dismissal interface.
+
 ## [0.1.0.1] - 2026-05-01
 ### Added
 - **Alpha 0.001 Hardening**: Implemented core signaling and scaling fixes for 2000-user population.

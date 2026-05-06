@@ -1,5 +1,5 @@
 import requests as http
-from flask import Blueprint, render_template
+from flask import Blueprint, render_template, request, jsonify
 from .middleware import admin_required
 from .models import db
 from .config import LIVEKIT_INTERNAL_URL
@@ -36,3 +36,32 @@ def dashboard():
         recent_audit=recent_audit,
         lk_healthy=lk_healthy,
     )
+
+
+@admin_bp.route("/api/admin/rooms/<room_id>/config", methods=["POST"])
+@admin_required
+def update_room_config(room_id):
+    data = request.get_json(force=True)
+    oppass = data.get("operator_passphrase", "").strip()
+    locked = data.get("locked", False)
+    
+    db.rooms.update_one(
+        {"_id": room_id},
+        {"$set": {
+            "operator_passphrase": oppass,
+            "locked": locked
+        }}
+    )
+    
+    if locked:
+        # If locking, also kick everyone
+        lk.delete_room(room_id)
+    
+    return jsonify({"status": "updated"})
+
+
+@admin_bp.route("/api/admin/rooms/<room_id>/kick-all", methods=["POST"])
+@admin_required
+def kick_all(room_id):
+    lk.delete_room(room_id)
+    return jsonify({"status": "kicked"})

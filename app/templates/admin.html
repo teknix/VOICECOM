@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>VoiceCom — Admin</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
@@ -19,11 +20,46 @@
     .badge.active { background: #14532d; color: #86efac; }
     nav { margin-bottom: 1.5rem; font-size: .85rem; }
     nav a { color: #4cc9f0; text-decoration: none; margin-right: 1rem; }
+    .btn { padding: .3rem .6rem; border: none; border-radius: 4px; font-size: .75rem; cursor: pointer; background: #2a4a7f; color: white; }
+    .btn:hover { background: #4361ee; }
+
+    #room-modal {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: #16213e; border: 1px solid #2a4a7f; border-radius: 8px;
+      padding: 1.5rem; z-index: 2000; display: none; width: 340px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    }
+    .input-group { margin-bottom: 1rem; }
+    .input-group label { display: block; font-size: .75rem; color: #607090; margin-bottom: .4rem; text-transform: uppercase; }
+    .input-group input { width: 100%; background: #1a1a2e; border: 1px solid #2a4a7f; color: white; padding: .5rem; border-radius: 4px; }
   </style>
 </head>
 <body>
-  <nav><a href="/">← Back to voice</a> <a href="/auth/logout">Logout</a></nav>
+  <nav>
+    <a href="/">← Back to voice</a> 
+    <a href="/?room=global-announcement">🎤 God Mic (Global)</a>
+    <a href="/auth/logout">Logout</a>
+  </nav>
   <h1>Admin Dashboard</h1>
+
+  <div id="room-modal">
+    <h3 id="modal-title" style="margin-top:0">Manage Room</h3>
+    <div class="input-group">
+      <label>Operator Passphrase</label>
+      <input type="password" id="room-oppass" placeholder="Leave empty to disable">
+    </div>
+    <div class="input-group" style="display:flex; align-items:center; gap:.5rem;">
+      <input type="checkbox" id="room-locked" style="width:auto; margin-bottom:0">
+      <label style="margin-bottom:0">Locked (Only Admins can join)</label>
+    </div>
+    <div style="display:flex; justify-content:space-between; gap:.5rem; margin-top:1.5rem;">
+      <button class="btn" onclick="kickAll()" style="background:#7f1d1d">Kick All</button>
+      <div style="display:flex; gap:.5rem;">
+        <button class="btn" onclick="closeModal()" style="background:transparent; border:1px solid #2a4a7f">Cancel</button>
+        <button class="btn" onclick="saveRoom()">Save Settings</button>
+      </div>
+    </div>
+  </div>
 
   <div>
     LiveKit:
@@ -34,17 +70,19 @@
 
   <h2>Active Rooms ({{ rooms | length }})</h2>
   <table>
-    <thead><tr><th>Room ID</th><th>Name</th><th>Mode</th><th>Participants</th></tr></thead>
+    <thead><tr><th>Room ID</th><th>Name</th><th>Mode</th><th>Status</th><th>Participants</th><th>Manage</th></tr></thead>
     <tbody>
     {% for room in rooms %}
       <tr>
-        <td>{{ room._id }}</td>
+        <td style="font-family:monospace">{{ room._id }}</td>
         <td>{{ room.display_name }}</td>
         <td>{{ room.mode }}</td>
+        <td>{{ '🔒 Locked' if room.locked else '🔓 Open' }}</td>
         <td>{{ room.participant_count }}</td>
+        <td><button class="btn" onclick='openModal("{{ room._id }}", "{{ room.display_name }}", {{ "true" if room.locked else "false" }})'>⚙️ Manage</button></td>
       </tr>
     {% else %}
-      <tr><td colspan="4" style="color:#607090">No active rooms</td></tr>
+      <tr><td colspan="5" style="color:#607090">No active rooms</td></tr>
     {% endfor %}
     </tbody>
   </table>
@@ -84,6 +122,63 @@
     </tbody>
   </table>
 
-  <script>setTimeout(() => location.reload(), 30000);</script>
+  <script>
+    let currentRoomId = null;
+    const modal = document.getElementById('room-modal');
+    const input = document.getElementById('room-oppass');
+    const lockedInput = document.getElementById('room-locked');
+
+    function openModal(id, name, locked) {
+      currentRoomId = id;
+      document.getElementById('modal-title').textContent = `Manage: ${name}`;
+      input.value = ''; // We don't show the existing password for security
+      lockedInput.checked = locked;
+      modal.style.display = 'block';
+    }
+
+    function closeModal() {
+      modal.style.display = 'none';
+      currentRoomId = null;
+    }
+
+    async function saveRoom() {
+      if (!currentRoomId) return;
+      const resp = await fetch(`/api/admin/rooms/${currentRoomId}/config`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+        },
+        body: JSON.stringify({ 
+          operator_passphrase: input.value,
+          locked: lockedInput.checked
+        })
+      });
+      
+      if (resp.ok) {
+        alert('Settings saved successfully');
+        location.reload();
+      } else {
+        const err = await resp.json();
+        alert(`Error: ${err.error}`);
+      }
+    }
+
+    async function kickAll() {
+      if (!currentRoomId || !confirm("Are you sure you want to kick everyone from this room?")) return;
+      const resp = await fetch(`/api/admin/rooms/${currentRoomId}/kick-all`, {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+        }
+      });
+      if (resp.ok) {
+        alert('All participants kicked');
+        location.reload();
+      }
+    }
+
+    setTimeout(() => { if (!currentRoomId) location.reload(); }, 30000);
+  </script>
 </body>
 </html>

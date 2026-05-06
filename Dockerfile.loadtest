@@ -1,0 +1,5 @@
+FROM node:18-slim
+WORKDIR /app
+RUN npm install livekit-client
+COPY load_test_client.js .
+CMD ["node", "load_test_client.js"]

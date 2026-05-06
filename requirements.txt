@@ -6,3 +6,4 @@ gevent>=23.9
 flask-limiter>=3.5
 flask-wtf>=1.2
 requests>=2.31
+bcrypt>=4.1

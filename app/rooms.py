@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import json
+import gevent
 from flask import Blueprint, jsonify, request, session
 from gevent.pool import Pool
 from .middleware import login_required, mod_required
@@ -42,6 +43,7 @@ def me():
         "user_id": session["user_id"],
         "display_name": session["display_name"],
         "role": session["role"],
+        "avatar_url": session.get("avatar_url")
     })
 
 
@@ -70,10 +72,48 @@ def token():
             room_id=room_id,
             role=session["role"],
             sector=session.get("sector", "Sector 01"),
+            avatar_url=session.get("avatar_url")
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
     return jsonify({"token": jwt})
+
+
+def _set_room_mode(room_id, room, new_mode):
+    # 1. Update LiveKit Room Metadata (O(1) Broadcast Signal)
+    current_meta = {}
+    try:
+        try:
+            raw_meta = lk.get_room_metadata(room_id)
+            current_meta = json.loads(raw_meta) if raw_meta else {}
+        except: pass # Best effort for existing meta
+        
+        current_meta["mode"] = new_mode
+        lk.update_room_metadata(room_id, json.dumps(current_meta))
+    except Exception as e:
+        return {"error": f"LiveKit update failed: {e}"}, 502
+
+    # 2. Update DB (Source of Truth)
+    db.rooms.update_one({"_id": room_id}, {"$set": {"mode": new_mode}})
+
+    # 3. Security Enforcement (O(N) Background Mute)
+    if new_mode == "broadcast":
+        def enforce_mute():
+            try:
+                participants = lk.list_participants(room_id)
+                presenter_ids = set(room.get("presenter_ids", []))
+                pool = Pool(10)
+                for p in participants:
+                    p_meta = json.loads(p.metadata) if p.metadata else {}
+                    role = p_meta.get("role", "member")
+                    if role == "member" and p.identity not in presenter_ids:
+                        pool.spawn(lk.update_participant, room_id, p.identity, can_publish=False)
+                pool.join()
+            except Exception as e:
+                print(f"Background enforcement failed: {e}")
+        gevent.spawn(enforce_mute)
+
+    return {"mode": new_mode}, 200
 
 
 @rooms_bp.route("/api/rooms/<room_id>/mode", methods=["POST"])
@@ -88,15 +128,10 @@ def toggle_mode(room_id):
     if not room:
         return jsonify({"error": "Room not found"}), 404
 
-    try:
-        lk.update_room_metadata(room_id, json.dumps({"mode": new_mode}))
-    except Exception as e:
-        return jsonify({"error": f"LiveKit update failed: {e}"}), 502
-
-    db.rooms.update_one({"_id": room_id}, {"$set": {"mode": new_mode}})
-    audit_log(room_id, "mode_change", session["user_id"], {"mode": new_mode})
-
-    return jsonify({"mode": new_mode})
+    res, status = _set_room_mode(room_id, room, new_mode)
+    if status == 200:
+        audit_log(room_id, "mode_change", session["user_id"], {"mode": new_mode})
+    return jsonify(res), status
 
 
 @rooms_bp.route("/api/rooms/<room_id>/sync", methods=["POST"])
@@ -107,14 +142,25 @@ def sync_room(room_id):
         return jsonify({"error": "Room not found"}), 404
 
     mode = room.get("mode", "discussion")
-    try:
-        lk.update_room_metadata(room_id, json.dumps({"mode": mode}))
-    except Exception as e:
-        return jsonify({"error": f"LiveKit sync failed: {e}"}), 502
+    res, status = _set_room_mode(room_id, room, mode)
+    
+    if status != 200:
+        return jsonify(res), status
 
     audit_log(room_id, "room_sync", session["user_id"], {"mode": mode})
+    return jsonify({"status": "synced", "mode": mode}), 200
 
-    return jsonify({"status": "synced", "mode": mode})
+
+@rooms_bp.route("/api/rooms/<room_id>/metadata", methods=["POST"])
+@mod_required
+def update_room_metadata(room_id):
+    data = request.get_json(force=True)
+    metadata = data.get("metadata", "")
+    try:
+        lk.update_room_metadata(room_id, metadata)
+        return jsonify({"status": "updated"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
 
 
 @rooms_bp.route("/api/rooms/<room_id>/mute", methods=["POST"])

@@ -4,22 +4,6 @@ Deferred items from the CEO/Engineering review (2026-04-30). Not blocking v1 lau
 
 ---
 
-## P1 — Push-to-Talk Key Configuration
-
-**Current:** Caps Lock is hardcoded as the PTT key in the Phase 4 spec.
-**Gap:** No UI to configure the key binding. Users who dislike Caps Lock have no alternative.
-**Resolution:** Add a keyboard shortcut settings panel in voice.html. Persist preference to `localStorage`. Space bar is a common alternative — default to Caps Lock, allow override.
-
----
-
-## P1 — Hand Raise Extended Schema
-
-**Current:** Hand raise message schema defined in Phase 4 (§4.3): `{ type, user_id, display_name, raised }`.
-**Gap:** No queue management — if 10 users raise hands simultaneously, presenter has no ordered list.
-**Resolution:** Add `raised_at: <ISO timestamp>` to the message schema. Client-side queue on presenter view sorted by `raised_at`. Moderator can dismiss individual hands via `{ raised: false }` message.
-
----
-
 ## P2 — Recording Cleanup / Disk Management
 
 **Current:** Egress writes `.mp4` files to `/recordings` volume with no cleanup policy.
@@ -51,7 +35,17 @@ room.on(LivekitClient.RoomEvent.ActiveSpeakersChanged, (speakers) => {
 **Explicitly out of scope for v1.** Session keys (`user_id`, `display_name`, `role`) are already named to match the OIDC flow. Replace `Phase 2` entirely; no other code changes required.
 
 ## Completed
+- [x] **E2E/Integration Hardening**: Verified role hierarchy, shadow speaker enforcement, persistent hand queue, and DOM pooling. (v0.1.0.2, 2026-05-03)
+- [x] **Push-to-Talk Key Configuration**: Added keyboard shortcut settings panel with localStorage persistence. (v0.1.0.2, 2026-05-03)
+- [x] **Hand Raise Extended Schema**: Added `raised_at` timestamps, moderator queue, and dismissal logic. (v0.1.0.2, 2026-05-03)
 - [x] **Sector Grouping**: Organized 2,000-user floor list into 16 US sectors. (v0.1.0.1, 2026-05-01)
+
+---
+
+## P2 — Speaking-First Floor Sort
+**Current:** Floor is grouped by sector and sorted alphabetically.
+**Gap:** In a 2,000-user room, finding active speakers on the floor requires scrolling.
+**Resolution:** Implement a priority sort for the virtualized list. Participants with `isSpeaking: true` should bubble to the top of their sector (or a global "Speaking Now" section).
 - [x] **IRC Density Mode**: High-density 24px layout for large-scale monitoring. (v0.1.0.1, 2026-05-01)
 - [x] **Moderator Sync**: Force-broadcast state reconciliation via O(1) metadata. (v0.1.0.1, 2026-05-01)
 - [x] **XSS/Security Audit**: Secured chat, identity rendering, and hardened access control. (v0.1.0.1, 2026-05-01)

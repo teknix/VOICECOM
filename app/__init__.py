@@ -38,6 +38,15 @@ def create_app():
     @app.route("/")
     @login_required
     def index():
-        return render_template("voice.html", livekit_url=os.environ["LIVEKIT_HOST"])
+        from flask import session
+        user = {
+            "user_id": session.get("user_id"),
+            "display_name": session.get("display_name"),
+            "role": session.get("role"),
+            "avatar_url": session.get("avatar_url")
+        }
+        return render_template("voice.html", 
+                               livekit_url=os.environ["LIVEKIT_HOST"],
+                               me=user)
 
     return app

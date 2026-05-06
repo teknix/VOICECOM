@@ -10,4 +10,4 @@ COPY static/ ./static/
 
 ENV PYTHONUNBUFFERED=1
 
-CMD ["gunicorn", "--worker-class=gevent", "--workers=4", "--worker-connections=100", "--bind", "0.0.0.0:5000", "app:create_app()"]
+CMD ["gunicorn", "--worker-class=gevent", "--workers=4", "--worker-connections=100", "--bind", "0.0.0.0:5000", "--access-logfile", "-", "app:create_app()"]

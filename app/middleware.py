@@ -33,6 +33,11 @@ def mod_required(f):
             
         # Check for per-room operator
         if role == "operator" and room_id:
+            # A: Access via room-specific passphrase (stored in session)
+            if session.get("operator_room_id") == room_id:
+                return f(*args, **kwargs)
+
+            # B: Access via explicit user_id assignment (legacy support)
             from .models import db
             room = db.rooms.find_one({"_id": room_id, "operator_ids": session["user_id"]})
             if room:
