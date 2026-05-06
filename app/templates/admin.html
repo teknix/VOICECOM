@@ -23,7 +23,7 @@
     .btn { padding: .3rem .6rem; border: none; border-radius: 4px; font-size: .75rem; cursor: pointer; background: #2a4a7f; color: white; }
     .btn:hover { background: #4361ee; }
 
-    #room-modal {
+    #room-modal, #user-modal {
       position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
       background: #16213e; border: 1px solid #2a4a7f; border-radius: 8px;
       padding: 1.5rem; z-index: 2000; display: none; width: 340px;
@@ -31,7 +31,7 @@
     }
     .input-group { margin-bottom: 1rem; }
     .input-group label { display: block; font-size: .75rem; color: #607090; margin-bottom: .4rem; text-transform: uppercase; }
-    .input-group input { width: 100%; background: #1a1a2e; border: 1px solid #2a4a7f; color: white; padding: .5rem; border-radius: 4px; }
+    .input-group input, .input-group select { width: 100%; background: #1a1a2e; border: 1px solid #2a4a7f; color: white; padding: .5rem; border-radius: 4px; }
   </style>
 </head>
 <body>
@@ -61,6 +61,34 @@
     </div>
   </div>
 
+  <div id="user-modal">
+    <h3 style="margin-top:0">Add New User</h3>
+    <div class="input-group">
+      <label>Email</label>
+      <input type="email" id="user-email" required>
+    </div>
+    <div class="input-group">
+      <label>Display Name</label>
+      <input type="text" id="user-name" required>
+    </div>
+    <div class="input-group">
+      <label>Password</label>
+      <input type="password" id="user-pass" required>
+    </div>
+    <div class="input-group">
+      <label>Role</label>
+      <select id="user-role">
+        <option value="member">Member</option>
+        <option value="moderator">Moderator</option>
+        <option value="admin">Admin</option>
+      </select>
+    </div>
+    <div style="display:flex; justify-content:flex-end; gap:.5rem; margin-top:1.5rem;">
+      <button class="btn" onclick="closeUserModal()" style="background:transparent; border:1px solid #2a4a7f">Cancel</button>
+      <button class="btn" onclick="saveUser()">Create User</button>
+    </div>
+  </div>
+
   <div>
     LiveKit:
     <span class="health {{ 'up' if lk_healthy else 'down' }}">
@@ -82,10 +110,30 @@
         <td><button class="btn" onclick='openModal("{{ room._id }}", "{{ room.display_name }}", {{ "true" if room.locked else "false" }})'>⚙️ Manage</button></td>
       </tr>
     {% else %}
-      <tr><td colspan="5" style="color:#607090">No active rooms</td></tr>
+      <tr><td colspan="6" style="color:#607090">No active rooms</td></tr>
     {% endfor %}
     </tbody>
   </table>
+
+  <h2>Internal User Management</h2>
+  <table>
+    <thead><tr><th>Email</th><th>Display Name</th><th>Role</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for user in users %}
+      <tr>
+        <td>{{ user.email }}</td>
+        <td>{{ user.display_name }}</td>
+        <td><span class="badge">{{ user.role }}</span></td>
+        <td>
+          <button class="btn" style="background:#7f1d1d" onclick='deleteUser("{{ user._id }}")'>Delete</button>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" style="color:#607090">No internal users</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <button class="btn" onclick="openUserModal()">+ Add New User</button>
 
   <h2>Active Recordings ({{ active_recordings | length }})</h2>
   <table>
@@ -124,20 +172,22 @@
 
   <script>
     let currentRoomId = null;
-    const modal = document.getElementById('room-modal');
-    const input = document.getElementById('room-oppass');
+    const roomModal = document.getElementById('room-modal');
+    const userModal = document.getElementById('user-modal');
+    const oppassInput = document.getElementById('room-oppass');
     const lockedInput = document.getElementById('room-locked');
 
+    // Room Management
     function openModal(id, name, locked) {
       currentRoomId = id;
       document.getElementById('modal-title').textContent = `Manage: ${name}`;
-      input.value = ''; // We don't show the existing password for security
+      oppassInput.value = '';
       lockedInput.checked = locked;
-      modal.style.display = 'block';
+      roomModal.style.display = 'block';
     }
 
     function closeModal() {
-      modal.style.display = 'none';
+      roomModal.style.display = 'none';
       currentRoomId = null;
     }
 
@@ -150,13 +200,12 @@
           'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
         },
         body: JSON.stringify({ 
-          operator_passphrase: input.value,
+          operator_passphrase: oppassInput.value,
           locked: lockedInput.checked
         })
       });
       
       if (resp.ok) {
-        alert('Settings saved successfully');
         location.reload();
       } else {
         const err = await resp.json();
@@ -173,12 +222,56 @@
         }
       });
       if (resp.ok) {
-        alert('All participants kicked');
         location.reload();
       }
     }
 
-    setTimeout(() => { if (!currentRoomId) location.reload(); }, 30000);
+    // User Management
+    function openUserModal() {
+      userModal.style.display = 'block';
+    }
+
+    function closeUserModal() {
+      userModal.style.display = 'none';
+    }
+
+    async function saveUser() {
+      const email = document.getElementById('user-email').value;
+      const name = document.getElementById('user-name').value;
+      const pass = document.getElementById('user-pass').value;
+      const role = document.getElementById('user-role').value;
+
+      const resp = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+        },
+        body: JSON.stringify({ email, display_name: name, password: pass, role })
+      });
+
+      if (resp.ok) {
+        location.reload();
+      } else {
+        const err = await resp.json();
+        alert(`Error: ${err.error}`);
+      }
+    }
+
+    async function deleteUser(id) {
+      if (!confirm("Are you sure you want to delete this user?")) return;
+      const resp = await fetch(`/api/admin/users/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+        }
+      });
+      if (resp.ok) {
+        location.reload();
+      }
+    }
+
+    setTimeout(() => { if (!currentRoomId && userModal.style.display === 'none') location.reload(); }, 30000);
   </script>
 </body>
 </html>

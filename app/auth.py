@@ -5,13 +5,14 @@ import bcrypt
 from flask import Blueprint, request, session, redirect, render_template
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from .config import SUPER_ADMIN_EMAIL, SUPER_ADMIN_HASH
+from .config import SUPER_ADMIN_EMAIL, SUPER_ADMIN_HASH, ENABLE_ZULIP_AUTH
 from .zulip import verify_zulip_credentials
+from .models import db
 
 auth_bp = Blueprint("auth", __name__)
 limiter = Limiter(key_func=get_remote_address, storage_uri=os.environ.get("REDIS_URL", "memory://"))
 
-# Legacy passphrases (kept for backward compatibility if needed, but primary is Zulip)
+# Legacy passphrases (kept for backward compatibility if needed, but primary is Zulip/Internal)
 PASSPHRASE = os.environ.get("ACCESS_PASSPHRASE")
 
 # Role priorities for hierarchical comparisons
@@ -25,7 +26,7 @@ ROLE_PRIORITY = {
 
 def authenticate(email, password):
     """
-    Authenticate user via Super Admin bypass or Zulip Proxy.
+    Authenticate user via Super Admin bypass, Zulip Proxy, or Internal DB.
     Returns (success, user_info)
     """
     # 1. Check Super Admin
@@ -38,20 +39,31 @@ def authenticate(email, password):
                 "avatar_url": None
             }
 
-    # 2. Check Zulip Proxy
-    success, profile = verify_zulip_credentials(email, password)
-    if success:
-        role = "member"
-        if profile.get("is_admin") or profile.get("is_owner"):
-            role = "admin"
-        elif profile.get("is_moderator"):
-            role = "moderator"
-            
+    # 2. Check Zulip Proxy (Optional)
+    if ENABLE_ZULIP_AUTH:
+        success, profile = verify_zulip_credentials(email, password)
+        if success:
+            role = "member"
+            if profile.get("is_admin") or profile.get("is_owner"):
+                role = "admin"
+            elif profile.get("is_moderator"):
+                role = "moderator"
+                
+            return True, {
+                "user_id": profile["user_id"],
+                "display_name": profile["full_name"],
+                "role": role,
+                "avatar_url": profile["avatar_url"]
+            }
+
+    # 3. Check Internal DB
+    user = db.users.find_one({"email": email})
+    if user and bcrypt.checkpw(password.encode('utf-8'), user["password_hash"].encode('utf-8')):
         return True, {
-            "user_id": profile["user_id"],
-            "display_name": profile["full_name"],
-            "role": role,
-            "avatar_url": profile["avatar_url"]
+            "user_id": str(user["_id"]),
+            "display_name": user["display_name"],
+            "role": user.get("role", "member"),
+            "avatar_url": user.get("avatar_url")
         }
 
     return False, None

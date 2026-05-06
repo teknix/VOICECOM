@@ -4,6 +4,7 @@ from .middleware import admin_required
 from .models import db
 from .config import LIVEKIT_INTERNAL_URL
 from . import lk
+import bcrypt
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -23,6 +24,8 @@ def dashboard():
         if entry.get("timestamp"):
             entry["timestamp"] = entry["timestamp"].isoformat()
 
+    users = list(db.users.find({}, {"password_hash": 0}))
+
     try:
         resp = http.get(f"{LIVEKIT_INTERNAL_URL}/", timeout=2)
         lk_healthy = resp.status_code == 200
@@ -35,7 +38,43 @@ def dashboard():
         active_recordings=active_recordings,
         recent_audit=recent_audit,
         lk_healthy=lk_healthy,
+        users=users
     )
+
+
+@admin_bp.route("/api/admin/users", methods=["POST"])
+@admin_required
+def create_user():
+    data = request.get_json(force=True)
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "")
+    display_name = data.get("display_name", "").strip()
+    role = data.get("role", "member")
+
+    if not all([email, password, display_name]):
+        return jsonify({"error": "Missing required fields"}), 400
+
+    if db.users.find_one({"email": email}):
+        return jsonify({"error": "User already exists"}), 409
+
+    password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode()
+    db.users.insert_one({
+        "email": email,
+        "password_hash": password_hash,
+        "display_name": display_name,
+        "role": role,
+        "avatar_url": None
+    })
+
+    return jsonify({"status": "created"})
+
+
+@admin_bp.route("/api/admin/users/<user_id>", methods=["DELETE"])
+@admin_required
+def delete_user(user_id):
+    from bson import ObjectId
+    db.users.delete_one({"_id": ObjectId(user_id)})
+    return jsonify({"status": "deleted"})
 
 
 @admin_bp.route("/api/admin/rooms/<room_id>/config", methods=["POST"])

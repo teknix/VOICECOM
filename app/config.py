@@ -11,6 +11,7 @@ RECORDINGS_DIR = os.environ.get("RECORDINGS_DIR", "/recordings")
 ZULIP_URL = os.environ.get("ZULIP_URL", "")
 ZULIP_EMAIL = os.environ.get("ZULIP_EMAIL", "")
 ZULIP_API_KEY = os.environ.get("ZULIP_API_KEY", "")
+ENABLE_ZULIP_AUTH = os.environ.get("ENABLE_ZULIP_AUTH", "false").lower() == "true"
 
 # Super Admin (Recovery)
 SUPER_ADMIN_EMAIL = os.environ.get("SUPER_ADMIN_EMAIL", "admin@voicecom.local")
