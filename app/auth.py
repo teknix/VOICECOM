@@ -12,9 +12,6 @@ from .models import db
 auth_bp = Blueprint("auth", __name__)
 limiter = Limiter(key_func=get_remote_address, storage_uri=os.environ.get("REDIS_URL", "memory://"))
 
-# Legacy passphrases (kept for backward compatibility if needed, but primary is Zulip/Internal)
-PASSPHRASE = os.environ.get("ACCESS_PASSPHRASE")
-
 # Role priorities for hierarchical comparisons
 ROLE_PRIORITY = {
     "admin": 100,
