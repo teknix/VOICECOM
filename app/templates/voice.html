@@ -19,11 +19,11 @@
 
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #1a1a2e;
-        --surface: #16213e;
-        --border: #2a4a7f;
+        --bg: #111111;
+        --surface: #1e1e1e;
+        --border: #333333;
         --text: #e0e0e0;
-        --muted: #a0a0b0;
+        --muted: #888888;
       }
     }
 
@@ -57,7 +57,7 @@
     .room-item.active { background: var(--primary); color: #fff; }
     .room-count { font-size: .75rem; background: rgba(255,255,255,.15); padding: .1rem .4rem; border-radius: 999px; }
     #sidebar-footer { padding: .75rem 1rem; border-top: 1px solid var(--border); font-size: .8rem; color: var(--muted); }
-    #sidebar-footer a { color: #4cc9f0; text-decoration: none; }
+    #sidebar-footer a { color: #60a5fa; text-decoration: none; }
     
     #main { flex: 1; display: flex; flex-direction: column; }
     #room-header { padding: .75rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: .75rem; }
@@ -131,12 +131,12 @@
     <span>NextGen Voice</span>
     <div style="display:flex; align-items:center; gap:.5rem;">
       <button id="density-toggle" title="Toggle IRC Density" style="background:none; border:none; cursor:pointer; font-size:1.1rem; padding:0; filter: grayscale(1);">⌨️</button>
-      <a href="/admin" id="admin-link" class="hidden" style="font-size:.75rem;color:#4cc9f0">Admin</a>
+      <a href="/admin" id="admin-link" class="hidden" style="font-size:.75rem;color:#60a5fa">Admin</a>
     </div>
   </header>
   <div id="room-list"></div>
   <div id="sidebar-footer">
-    <span id="user-display"></span> &bull; <a href="/auth/logout">Logout</a>
+    <span id="user-display"></span> &bull; <a href="#" id="chpass-link">Password</a> &bull; <a href="/auth/logout">Logout</a>
   </div>
 </div>
 
@@ -174,7 +174,7 @@
   <div id="controls" class="hidden">
     <button class="btn" id="mic-btn" disabled>🎤 Mute</button>
     <button class="btn btn-secondary" id="hand-btn" style="display:none">✋ Raise hand</button>
-    <span id="ptt-hint" class="hidden">Hold Caps Lock to talk</span>
+    <span id="ptt-hint" class="hidden">Hold <span id="ptt-key-label"></span> to talk <button id="ptt-config-btn" title="Change PTT key" style="background:none;border:1px solid #555;border-radius:3px;color:#aaa;cursor:pointer;font-size:.7rem;padding:.1rem .35rem;margin-left:.3rem">⚙</button></span>
     <div style="flex:1"></div>
     <div id="mod-controls" class="hidden">
       <button class="btn" id="god-mic-btn" style="background:#7209b7">📢 God Mic</button>
@@ -191,6 +191,18 @@
 <div id="hand-raise-toast"></div>
 <div id="audio-container"></div>
 
+<div id="chpass-modal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1.5rem;z-index:2000;width:320px;box-shadow:0 8px 24px rgba(0,0,0,.5)">
+  <h3 style="margin:0 0 1rem;font-size:1rem">Change Password</h3>
+  <div id="chpass-error" style="display:none;background:#4a1942;color:#ff6b6b;padding:.5rem .75rem;border-radius:4px;margin-bottom:.75rem;font-size:.85rem"></div>
+  <input type="password" id="chpass-current" placeholder="Current password" style="width:100%;padding:.5rem;background:#111;border:1px solid var(--border);border-radius:4px;color:white;margin-bottom:.6rem">
+  <input type="password" id="chpass-new" placeholder="New password" style="width:100%;padding:.5rem;background:#111;border:1px solid var(--border);border-radius:4px;color:white;margin-bottom:.6rem">
+  <input type="password" id="chpass-confirm" placeholder="Confirm new password" style="width:100%;padding:.5rem;background:#111;border:1px solid var(--border);border-radius:4px;color:white;margin-bottom:1rem">
+  <div style="display:flex;justify-content:flex-end;gap:.5rem">
+    <button onclick="document.getElementById('chpass-modal').style.display='none'" style="padding:.4rem .8rem;background:transparent;border:1px solid var(--border);border-radius:4px;color:white;cursor:pointer">Cancel</button>
+    <button onclick="submitChpass()" style="padding:.4rem .8rem;background:#4361ee;border:none;border-radius:4px;color:white;cursor:pointer">Save</button>
+  </div>
+</div>
+
 <script src="{{ url_for('static', filename='livekit-client.umd.min.js') }}"></script>
 <script>
 const LIVEKIT_WS_URL = "{{ livekit_url }}";
@@ -201,6 +213,8 @@ let globalRoom = null;
 let activeEgressId = null;
 let currentRoomMode = "discussion";
 let pttMode = false;
+let pttKey = localStorage.getItem("pttKey") || "Tab";
+let pttCapturing = false;
 
 // Virtualization state
 let allParticipants = [];
@@ -245,11 +259,21 @@ async function loadRooms() {
     const el = document.createElement("div");
     el.className = "room-item";
     el.dataset.id = room._id;
-    el.innerHTML = `<span>${room.display_name}</span><span class="room-count">${room.participant_count || 0}</span>`;
+    const count = room.participant_count || 0;
+    el.innerHTML = `<span>${room.display_name}</span><span class="room-count" style="${count === 0 ? 'opacity:.35' : ''}">${count}</span>`;
     el.onclick = () => joinRoom(room._id, room.display_name, room.mode);
     list.appendChild(el);
   });
   return rooms;
+}
+
+function updateRoomCountBadge(roomId, delta) {
+  const badge = document.querySelector(`.room-item[data-id="${roomId}"] .room-count`);
+  if (!badge) return;
+  const current = parseInt(badge.textContent, 10) || 0;
+  const next = Math.max(0, current + delta);
+  badge.textContent = next;
+  badge.style.opacity = next === 0 ? "0.35" : "1";
 }
 
 async function joinRoom(roomId, displayName, mode) {
@@ -257,14 +281,25 @@ async function joinRoom(roomId, displayName, mode) {
     document.getElementById("sidebar").classList.remove("open");
     document.getElementById("sidebar-overlay").classList.add("hidden");
   }
-  if (lkRoom) await leaveRoom();
+
+  // Immediately silence the current channel to prevent audio bleed-over.
+  // pause() + srcObject=null stops browser playback before any async work.
+  document.querySelectorAll("#audio-container audio").forEach(el => {
+    if (el.dataset.roomId !== "global-announcement") {
+      el.pause();
+      el.srcObject = null;
+      el.remove();
+    }
+  });
+  if (lkRoom) { await lkRoom.disconnect(); lkRoom = null; }
+  // globalRoom (God Mic / announcements) stays connected across channel switches.
 
   document.querySelectorAll(".room-item").forEach(el => el.classList.remove("active"));
   document.querySelector(`.room-item[data-id="${roomId}"]`)?.classList.add("active");
 
   const resp = await fetch("/api/token", {
     method: "POST",
-    headers: { 
+    headers: {
       "Content-Type": "application/json",
       "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content
     },
@@ -293,8 +328,8 @@ async function joinRoom(roomId, displayName, mode) {
     return;
   }
 
-  // Join Global Announcement room as subscribe-only (unless admin)
-  if (roomId !== "global-announcement") {
+  // Connect globalRoom once — reuse it on subsequent channel switches.
+  if (roomId !== "global-announcement" && !globalRoom) {
     try {
       const gResp = await fetch("/api/token", {
         method: "POST",
@@ -326,6 +361,22 @@ async function joinRoom(roomId, displayName, mode) {
   setStatus("Connected to " + displayName);
 }
 
+function playJoinSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.25);
+  } catch (_) {}
+}
+
 function setupRoomEvents(room, roomId) {
   const refresh = () => {
     updateParticipantsList();
@@ -333,8 +384,15 @@ function setupRoomEvents(room, roomId) {
     renderFloor();
   };
 
-  room.on(LivekitClient.RoomEvent.ParticipantConnected, refresh);
-  room.on(LivekitClient.RoomEvent.ParticipantDisconnected, refresh);
+  room.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
+    refresh();
+    playJoinSound();
+    updateRoomCountBadge(roomId, +1);
+  });
+  room.on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
+    refresh();
+    updateRoomCountBadge(roomId, -1);
+  });
   room.on(LivekitClient.RoomEvent.ConnectionQualityChanged, refresh);
   room.on(LivekitClient.RoomEvent.RoomMetadataChanged, (metadata) => {
     try {
@@ -346,23 +404,26 @@ function setupRoomEvents(room, roomId) {
     } catch (e) { console.error("Failed to parse room metadata", e); }
   });
   room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, pub, participant) => {
+    if (room !== lkRoom && room !== globalRoom) return; // stale connection guard
     if (track.kind === LivekitClient.Track.Kind.Audio) {
+      const elId = `audio-${roomId}-${participant.identity}`;
+      const existing = document.getElementById(elId);
+      if (existing) { existing.pause(); existing.srcObject = null; existing.remove(); }
       const el = track.attach();
-      el.id = "audio-" + participant.identity;
+      el.id = elId;
+      el.dataset.roomId = roomId;
       document.getElementById("audio-container").appendChild(el);
-      
-      // Smart Bandwidth Guard: Set priority for privileged roles
       try {
         const meta = JSON.parse(participant.metadata || "{}");
         if (["admin", "moderator", "operator"].includes(meta.role)) {
           pub.setPriority(LivekitClient.Track.Priority.High);
         }
-      } catch (e) { /* ignore malformed meta */ }
+      } catch (e) {}
     }
     refresh();
   });
   room.on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, pub, participant) => {
-    track.detach().forEach(el => el.remove());
+    track.detach().forEach(el => { el.pause(); el.srcObject = null; el.remove(); });
     refresh();
   });
   room.on(LivekitClient.RoomEvent.ActiveSpeakersChanged, speakers => {
@@ -606,6 +667,7 @@ function updateModeUI(mode) {
     document.getElementById("mic-btn").disabled = false;
     document.getElementById("hand-btn").style.display = "none";
     document.getElementById("ptt-hint").classList.remove("hidden");
+    updatePttHint();
     pttMode = true;
   }
 }
@@ -618,6 +680,11 @@ function showHandRaise(msg) {
 }
 
 async function leaveRoom() {
+  // Stop all audio immediately before async disconnects to prevent bleed
+  document.querySelectorAll("#audio-container audio").forEach(el => {
+    el.pause();
+    el.srcObject = null;
+  });
   if (lkRoom) { await lkRoom.disconnect(); lkRoom = null; }
   if (globalRoom) { await globalRoom.disconnect(); globalRoom = null; }
   document.getElementById("audio-container").innerHTML = "";
@@ -698,16 +765,55 @@ document.getElementById("mic-btn").addEventListener("click", async () => {
   await toggleMic(isMuted);
 });
 
-// PTT — Caps Lock
+// PTT key label helper
+function pttKeyLabel(code) {
+  const names = { Tab: "Tab", Space: "Space", CapsLock: "CapsLock", ShiftLeft: "L-Shift", ShiftRight: "R-Shift", ControlLeft: "L-Ctrl", ControlRight: "R-Ctrl", AltLeft: "L-Alt", AltRight: "R-Alt" };
+  if (names[code]) return names[code];
+  if (code.startsWith("Key")) return code.slice(3);
+  if (code.startsWith("Digit")) return code.slice(5);
+  if (code.startsWith("F") && code.length <= 3) return code;
+  return code;
+}
+
+function updatePttHint() {
+  const el = document.getElementById("ptt-key-label");
+  if (el) el.textContent = pttKeyLabel(pttKey);
+}
+
+// PTT config button — press any key to rebind
+document.getElementById("ptt-config-btn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  pttCapturing = true;
+  const btn = document.getElementById("ptt-config-btn");
+  btn.textContent = "press a key…";
+  btn.style.color = "#f90";
+});
+
 document.addEventListener("keydown", async (e) => {
+  if (pttCapturing) {
+    e.preventDefault();
+    const skip = ["Escape", "Enter", "Backspace", "Delete"];
+    if (!skip.includes(e.code)) {
+      pttKey = e.code;
+      localStorage.setItem("pttKey", pttKey);
+      updatePttHint();
+    }
+    pttCapturing = false;
+    const btn = document.getElementById("ptt-config-btn");
+    if (btn) { btn.textContent = "⚙"; btn.style.color = "#aaa"; }
+    return;
+  }
   if (!lkRoom || !pttMode) return;
-  if (e.code === "CapsLock" && !e.repeat) {
+  if (e.code === pttKey && !e.repeat) {
+    e.preventDefault();
     await toggleMic(true);
   }
 });
+
 document.addEventListener("keyup", async (e) => {
   if (!lkRoom || !pttMode) return;
-  if (e.code === "CapsLock") {
+  if (e.code === pttKey) {
+    e.preventDefault();
     await toggleMic(false);
   }
 });
@@ -808,6 +914,39 @@ document.getElementById("sidebar-overlay").onclick = () => {
 };
 
 init();
+
+document.getElementById("chpass-link").addEventListener("click", (e) => {
+  e.preventDefault();
+  document.getElementById("chpass-error").style.display = "none";
+  document.getElementById("chpass-current").value = "";
+  document.getElementById("chpass-new").value = "";
+  document.getElementById("chpass-confirm").value = "";
+  document.getElementById("chpass-modal").style.display = "block";
+});
+
+async function submitChpass() {
+  const current = document.getElementById("chpass-current").value;
+  const newPass = document.getElementById("chpass-new").value;
+  const confirm = document.getElementById("chpass-confirm").value;
+  const errEl = document.getElementById("chpass-error");
+
+  if (!current || !newPass || !confirm) { errEl.textContent = "All fields are required."; errEl.style.display = "block"; return; }
+  if (newPass !== confirm) { errEl.textContent = "New passwords do not match."; errEl.style.display = "block"; return; }
+  if (newPass.length < 8) { errEl.textContent = "New password must be at least 8 characters."; errEl.style.display = "block"; return; }
+
+  const resp = await fetch("/api/me/password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content },
+    body: JSON.stringify({ current_password: current, new_password: newPass })
+  });
+  if (resp.ok) {
+    document.getElementById("chpass-modal").style.display = "none";
+  } else {
+    const err = await resp.json();
+    errEl.textContent = err.error || "Failed to change password.";
+    errEl.style.display = "block";
+  }
+}
 </script>
 </body>
 </html>
