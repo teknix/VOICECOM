@@ -29,12 +29,26 @@
 
     *, *::before, *::after { box-sizing: border-box; }
     body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; display: flex; height: 100vh; overflow: hidden; transition: box-shadow 0.2s; }
-    body.hot-mic { box-shadow: inset 0 0 30px 10px var(--hot-mic); animation: pulse-red 1.5s infinite; }
-    
+    /* Hot Mic overlay: animate opacity only (compositor-only, no repaint).
+       Animating box-shadow directly on body causes full-page repaints every
+       frame and glitches on Firefox/Linux over time. */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9999;
+      box-shadow: inset 0 0 50px 18px var(--hot-mic);
+      opacity: 0;
+      will-change: opacity;
+    }
+    body.hot-mic::before {
+      animation: pulse-red 1.5s ease-in-out infinite;
+    }
+
     @keyframes pulse-red {
-      0% { box-shadow: inset 0 0 15px 5px var(--hot-mic); }
-      50% { box-shadow: inset 0 0 45px 15px var(--hot-mic); }
-      100% { box-shadow: inset 0 0 15px 5px var(--hot-mic); }
+      0%, 100% { opacity: 0.45; }
+      50% { opacity: 1; }
     }
 
     #sidebar { width: 220px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; transition: transform 0.3s; z-index: 1500; }
