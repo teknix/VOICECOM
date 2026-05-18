@@ -39,6 +39,8 @@ def authenticate(username, password):
     # 2. Check Zulip Proxy (Optional)
     if ENABLE_ZULIP_AUTH:
         success, profile = verify_zulip_credentials(username, password)
+        if not success and isinstance(profile, dict) and profile.get("hint") == "email_required":
+            return False, {"error": "Use your full email address (e.g. you@example.com) to sign in with The Server."}
         if success:
             role = "member"
             if profile.get("is_admin") or profile.get("is_owner"):
@@ -96,8 +98,11 @@ def login():
             session["avatar_url"] = user_info["avatar_url"]
             session["sector"] = sector
             return redirect("/")
-            
-        return render_template("login.html", error="Invalid username or password.")
+
+        error = "Invalid username or password."
+        if isinstance(user_info, dict) and user_info.get("error"):
+            error = user_info["error"]
+        return render_template("login.html", error=error)
     return render_template("login.html")
 
 

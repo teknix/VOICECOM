@@ -47,8 +47,14 @@ def verify_zulip_credentials(email: str, password: str):
         resp = requests.post(
             f"{base}/api/v1/fetch_api_key",
             data={"username": email, "password": password},
-            timeout=5
+            timeout=8
         )
+        if resp.status_code == 400:
+            # Zulip rejects non-email usernames — surface this specifically
+            body = resp.json()
+            if "valid email" in body.get("msg", "").lower():
+                return False, {"hint": "email_required"}
+            return False, None
         if resp.status_code != 200:
             return False, None
         key_data = resp.json()
