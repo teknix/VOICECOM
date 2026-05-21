@@ -324,13 +324,22 @@ async function joinRoom(roomId, displayName, mode) {
 
   try {
     await lkRoom.connect(LIVEKIT_WS_URL, token);
-    // Pre-publish microphone (muted) for instant PTT
+  } catch (e) {
+    setStatus("Connection failed: " + e.message);
+    return;
+  }
+
+  // Pre-publish mic muted for instant PTT. Isolated catch so an iOS
+  // permission denial (NotAllowedError — WebKit breaks the user gesture
+  // chain across awaits) doesn't abort the room join entirely.
+  try {
     await lkRoom.localParticipant.setMicrophoneEnabled(true);
     const audioTrack = lkRoom.localParticipant.getTrackPublication(LivekitClient.Track.Source.Microphone);
     if (audioTrack) await audioTrack.mute();
   } catch (e) {
-    setStatus("Connection failed: " + e.message);
-    return;
+    console.warn("Mic pre-publish failed (permission?):", e.message);
+    document.getElementById("mic-btn").disabled = true;
+    document.getElementById("mic-btn").title = "Microphone permission denied";
   }
 
   // Connect globalRoom once — reuse it on subsequent channel switches.
