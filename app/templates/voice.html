@@ -217,6 +217,7 @@ let lkRoom = null;
 let globalRoom = null;
 let activeEgressId = null;
 let currentRoomMode = "discussion";
+let joiningRoom = false;
 let pttMode = false;
 let pttKey = localStorage.getItem("pttKey") || "Tab";
 let pttCapturing = false;
@@ -265,7 +266,14 @@ async function loadRooms() {
     el.className = "room-item";
     el.dataset.id = room._id;
     const count = room.participant_count || 0;
-    el.innerHTML = `<span>${room.display_name}</span><span class="room-count" style="${count === 0 ? 'opacity:.35' : ''}">${count}</span>`;
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = room.display_name;
+    const countSpan = document.createElement("span");
+    countSpan.className = "room-count";
+    countSpan.style.opacity = count === 0 ? "0.35" : "1";
+    countSpan.textContent = count;
+    el.appendChild(nameSpan);
+    el.appendChild(countSpan);
     el.onclick = () => joinRoom(room._id, room.display_name, room.mode);
     list.appendChild(el);
   });
@@ -282,6 +290,9 @@ function updateRoomCountBadge(roomId, delta) {
 }
 
 async function joinRoom(roomId, displayName, mode) {
+  if (joiningRoom) return;
+  joiningRoom = true;
+  try {
   if (window.innerWidth <= 768) {
     document.getElementById("sidebar").classList.remove("open");
     document.getElementById("sidebar-overlay").classList.add("hidden");
@@ -329,39 +340,6 @@ async function joinRoom(roomId, displayName, mode) {
     return;
   }
 
-  // Pre-publish mic muted for instant PTT. Isolated catch so an iOS
-  // permission denial (NotAllowedError — WebKit breaks the user gesture
-  // chain across awaits) doesn't abort the room join entirely.
-  try {
-    await lkRoom.localParticipant.setMicrophoneEnabled(true);
-    const audioTrack = lkRoom.localParticipant.getTrackPublication(LivekitClient.Track.Source.Microphone);
-    if (audioTrack) await audioTrack.mute();
-  } catch (e) {
-    console.warn("Mic pre-publish failed (permission?):", e.message);
-    document.getElementById("mic-btn").disabled = true;
-    document.getElementById("mic-btn").title = "Microphone permission denied";
-  }
-
-  // Connect globalRoom once — reuse it on subsequent channel switches.
-  if (roomId !== "global-announcement" && !globalRoom) {
-    try {
-      const gResp = await fetch("/api/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content },
-        body: JSON.stringify({ room_id: "global-announcement" })
-      });
-      if (gResp.ok) {
-        const { token: gToken } = await gResp.json();
-        globalRoom = new LivekitClient.Room();
-        setupRoomEvents(globalRoom, "global-announcement");
-        await globalRoom.connect(LIVEKIT_WS_URL, gToken);
-        console.log("Joined Global Announcement");
-      }
-    } catch (ge) {
-      console.warn("Global room join failed:", ge);
-    }
-  }
-
   document.getElementById("room-header").classList.remove("hidden");
   document.getElementById("room-title").textContent = displayName;
   document.getElementById("controls").classList.remove("hidden");
@@ -373,6 +351,30 @@ async function joinRoom(roomId, displayName, mode) {
   document.getElementById("mic-btn").disabled = false;
   updateModeUI(mode);
   setStatus("Connected to " + displayName);
+
+  // Connect globalRoom in the background — never block UI on this.
+  if (roomId !== "global-announcement" && !globalRoom) {
+    (async () => {
+      try {
+        const gResp = await fetch("/api/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content },
+          body: JSON.stringify({ room_id: "global-announcement" })
+        });
+        if (!gResp.ok) return;
+        const { token: gToken } = await gResp.json();
+        globalRoom = new LivekitClient.Room();
+        setupRoomEvents(globalRoom, "global-announcement");
+        await globalRoom.connect(LIVEKIT_WS_URL, gToken);
+        console.log("Joined Global Announcement");
+      } catch (ge) {
+        console.warn("Global room join failed:", ge);
+      }
+    })();
+  }
+  } finally {
+    joiningRoom = false;
+  }
 }
 
 function playJoinSound() {
@@ -446,10 +448,12 @@ function setupRoomEvents(room, roomId) {
     renderFloor();
   });
   room.on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
-    const msg = JSON.parse(new TextDecoder().decode(payload));
-    if (msg.type === "mode_change") updateModeUI(msg.mode);
-    if (msg.type === "hand_raise" && msg.raised) showHandRaise(msg);
-    if (msg.type === "chat") appendChatMessage(participant.name || participant.identity, msg.message);
+    try {
+      const msg = JSON.parse(new TextDecoder().decode(payload));
+      if (msg.type === "mode_change") updateModeUI(msg.mode);
+      if (msg.type === "hand_raise" && msg.raised) showHandRaise(msg);
+      if (msg.type === "chat") appendChatMessage(participant?.name || participant?.identity || "?", msg.message);
+    } catch(e) { console.warn("DataReceived parse error", e); }
   });
   room.on(LivekitClient.RoomEvent.LocalTrackPublished, (pub) => {
     if (roomId === "echo-test" && pub.track.kind === LivekitClient.Track.Kind.Audio) {
@@ -461,6 +465,9 @@ function setupRoomEvents(room, roomId) {
     refresh();
   });
   room.on(LivekitClient.RoomEvent.Disconnected, (reason) => {
+    // Only reconnect for the active main room — globalRoom drops are silent.
+    if (room === globalRoom) { globalRoom = null; return; }
+    if (room !== lkRoom) return; // stale handler from a previous connection
     setStatus("Disconnected: " + reason);
     document.getElementById("reconnect-banner").style.display = "block";
     attemptReconnect(roomId);
@@ -553,21 +560,37 @@ function renderStage() {
     const el = document.createElement("div");
     el.className = "stage-item speaking";
     const initial = (p.name || p.identity).charAt(0).toUpperCase();
-    
+
     let metaObj = {};
     try { metaObj = JSON.parse(p.metadata || "{}"); } catch(e) {}
     const avatarUrl = metaObj.avatar_url;
 
-    el.innerHTML = `
-      <div class="avatar" ${avatarUrl ? `style="background-image: url('${avatarUrl}'); color: transparent;"` : ""}>${avatarUrl ? "" : initial}</div>
-      <div style="font-weight:600;font-size:.9rem;">${p.name || p.identity}</div>
-      <div style="font-size:.7rem;color:var(--muted)">${metaObj.role || "Member"}</div>
-    `;
+    const avatarDiv = document.createElement("div");
+    avatarDiv.className = "avatar";
+    if (avatarUrl) {
+      avatarDiv.style.backgroundImage = `url('${avatarUrl}')`;
+      avatarDiv.style.color = "transparent";
+    } else {
+      avatarDiv.textContent = initial;
+    }
+
+    const nameDiv = document.createElement("div");
+    nameDiv.style.cssText = "font-weight:600;font-size:.9rem;";
+    nameDiv.textContent = p.name || p.identity;
+
+    const roleDiv = document.createElement("div");
+    roleDiv.style.cssText = "font-size:.7rem;color:var(--muted)";
+    roleDiv.textContent = metaObj.role || "Member";
+
+    el.appendChild(avatarDiv);
+    el.appendChild(nameDiv);
+    el.appendChild(roleDiv);
     stage.appendChild(el);
   });
 }
 
 function renderFloor() {
+  if (!lkRoom) return;
   const container = document.getElementById("floor-container");
   const floor = document.getElementById("floor");
   
@@ -720,15 +743,38 @@ async function leaveRoom() {
 
 async function attemptReconnect(roomId) {
   let attempts = 0;
-  while (attempts < 5 && (!lkRoom || lkRoom.state === 'disconnected')) {
+  while (attempts < 5) {
     attempts++;
-    setStatus(`Reconnecting (Attempt ${attempts})...`);
+    setStatus(`Reconnecting (attempt ${attempts}/5)...`);
     try {
-      await joinRoom(roomId, me.display_name, currentRoomMode);
+      // Tear down only the LiveKit layer — UI panels stay visible
+      if (lkRoom) {
+        try { await lkRoom.disconnect(); } catch(e) {}
+        lkRoom = null;
+      }
+      document.getElementById("audio-container").innerHTML = "";
+
+      const resp = await fetch("/api/token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content
+        },
+        body: JSON.stringify({ room_id: roomId }),
+      });
+      if (!resp.ok) throw new Error("Token error");
+      const { token } = await resp.json();
+
+      lkRoom = new LivekitClient.Room({ adaptiveStream: true, dynacast: true });
+      setupRoomEvents(lkRoom, roomId);
+      await lkRoom.connect(LIVEKIT_WS_URL, token);
+      lkRoom.startAudio().catch(() => {});
+
       document.getElementById("reconnect-banner").style.display = "none";
+      setStatus("Reconnected to " + document.getElementById("room-title").textContent);
       return;
     } catch (e) {
-      console.error("Reconnect failed", e);
+      console.error("Reconnect attempt", attempts, "failed:", e);
       await new Promise(r => setTimeout(r, 2000 * attempts));
     }
   }
@@ -740,8 +786,19 @@ function setStatus(msg) {
 }
 
 // Mic toggle (Fast PTT via Track Muting)
+// First unmute on iOS has no pre-published track — publish here since
+// this call IS a direct user gesture (button press or PTT key).
 async function toggleMic(enabled) {
   if (!lkRoom) return;
+  if (enabled && !lkRoom.localParticipant.getTrackPublication(LivekitClient.Track.Source.Microphone)) {
+    try {
+      await lkRoom.startAudio();
+      await lkRoom.localParticipant.setMicrophoneEnabled(true);
+    } catch(e) {
+      setStatus("Mic access denied — check browser permissions");
+      return;
+    }
+  }
   const audioTrack = lkRoom.localParticipant.getTrackPublication(LivekitClient.Track.Source.Microphone);
   if (audioTrack) {
     if (enabled) await audioTrack.unmute();
