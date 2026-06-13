@@ -76,7 +76,11 @@
     #room-main { flex: 3; display: flex; flex-direction: column; gap: 1rem; overflow-y: auto; }
     #room-chat { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; min-width: 280px; }
     #chat-messages { flex: 1; overflow-y: auto; padding: 1rem; font-size: .85rem; }
-    #chat-input-area { padding: .75rem; border-top: 1px solid var(--border); display: flex; gap: .5rem; }
+    #chat-input-area { padding: .75rem; border-top: 1px solid var(--border); display: flex; gap: .5rem; position: relative; }
+    #emoji-typeahead { position: absolute; bottom: calc(100% + 4px); left: .75rem; right: .75rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; max-height: 240px; overflow-y: auto; display: none; z-index: 20; box-shadow: 0 -4px 12px rgba(0,0,0,.3); }
+    .emoji-option { display: flex; gap: .5rem; align-items: center; padding: .35rem .6rem; cursor: pointer; font-size: .85rem; }
+    .emoji-option.selected, .emoji-option:hover { background: var(--bg); }
+    .emoji-option .emoji-name { color: var(--muted); }
     #chat-input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); padding: .4rem .6rem; font-size: .85rem; }
     
     /* Stage: Top Speakers */
@@ -170,7 +174,8 @@
     <div id="room-chat" class="hidden">
       <div id="chat-messages"></div>
       <div id="chat-input-area">
-        <input type="text" id="chat-input" placeholder="Message stream...">
+        <div id="emoji-typeahead"></div>
+        <input type="text" id="chat-input" placeholder="Message stream..." autocomplete="off">
         <button class="btn btn-primary" id="chat-send" style="padding: .4rem .6rem;">Send</button>
       </div>
     </div>
@@ -209,6 +214,7 @@
 </div>
 
 <script src="{{ url_for('static', filename='livekit-client.umd.min.js') }}"></script>
+<script src="{{ url_for('static', filename='emoji.js') }}"></script>
 <script>
 const LIVEKIT_WS_URL = "{{ livekit_url }}";
 let me = null;
@@ -474,21 +480,107 @@ function setupRoomEvents(room, roomId) {
   });
 }
 
+// Zulip-style :shortcode: rendering — raw shortcodes travel over the wire
+// so they render natively in Zulip once the bridge lands.
+function emojify(text) {
+  return text.replace(/:([a-z0-9_+\-]+):/g, (match, name) => EMOJI_MAP[name] || match);
+}
+
 function appendChatMessage(name, text) {
   const list = document.getElementById("chat-messages");
   const div = document.createElement("div");
   div.style.marginBottom = "0.5rem";
-  
+
   const strong = document.createElement("strong");
   strong.style.color = "var(--primary)";
   strong.textContent = name;
-  
+
   div.appendChild(strong);
-  div.appendChild(document.createTextNode(": " + text));
-  
+  div.appendChild(document.createTextNode(": " + emojify(text)));
+
   list.appendChild(div);
   list.scrollTop = list.scrollHeight;
 }
+
+// Emoji typeahead — Zulip-style autocomplete when typing :na…
+const emojiBox = document.getElementById("emoji-typeahead");
+const EMOJI_NAMES = Object.keys(EMOJI_MAP);
+let emojiMatches = [];
+let emojiSelected = 0;
+let emojiQueryStart = -1;
+
+function emojiTypeaheadOpen() {
+  return emojiBox.style.display === "block";
+}
+
+function closeEmojiTypeahead() {
+  emojiBox.style.display = "none";
+  emojiMatches = [];
+}
+
+function updateEmojiTypeahead() {
+  const input = document.getElementById("chat-input");
+  const upToCaret = input.value.slice(0, input.selectionStart);
+  const m = upToCaret.match(/(?:^|\s):([a-z0-9_+\-]*)$/);
+  if (!m || !m[1]) return closeEmojiTypeahead();
+  const q = m[1];
+  emojiQueryStart = upToCaret.length - q.length - 1;
+  const starts = EMOJI_NAMES.filter(n => n.startsWith(q));
+  const contains = EMOJI_NAMES.filter(n => !n.startsWith(q) && n.includes(q));
+  emojiMatches = starts.concat(contains).slice(0, 8);
+  if (!emojiMatches.length) return closeEmojiTypeahead();
+  emojiSelected = 0;
+  renderEmojiTypeahead();
+}
+
+function renderEmojiTypeahead() {
+  emojiBox.innerHTML = "";
+  emojiMatches.forEach((name, i) => {
+    const opt = document.createElement("div");
+    opt.className = "emoji-option" + (i === emojiSelected ? " selected" : "");
+    const glyph = document.createElement("span");
+    glyph.textContent = EMOJI_MAP[name];
+    const label = document.createElement("span");
+    label.className = "emoji-name";
+    label.textContent = ":" + name + ":";
+    opt.appendChild(glyph);
+    opt.appendChild(label);
+    // mousedown (not click) so the input doesn't lose focus first
+    opt.onmousedown = (e) => { e.preventDefault(); applyEmojiCompletion(name); };
+    emojiBox.appendChild(opt);
+  });
+  emojiBox.style.display = "block";
+}
+
+function applyEmojiCompletion(name) {
+  const input = document.getElementById("chat-input");
+  const caret = input.selectionStart;
+  input.value = input.value.slice(0, emojiQueryStart) + ":" + name + ": " + input.value.slice(caret);
+  const pos = emojiQueryStart + name.length + 3;
+  input.focus();
+  input.setSelectionRange(pos, pos);
+  closeEmojiTypeahead();
+}
+
+document.getElementById("chat-input").addEventListener("input", updateEmojiTypeahead);
+document.getElementById("chat-input").addEventListener("blur", () => setTimeout(closeEmojiTypeahead, 150));
+document.getElementById("chat-input").addEventListener("keydown", (e) => {
+  if (!emojiTypeaheadOpen()) return;
+  if (e.key === "ArrowDown") {
+    emojiSelected = (emojiSelected + 1) % emojiMatches.length;
+    renderEmojiTypeahead();
+    e.preventDefault();
+  } else if (e.key === "ArrowUp") {
+    emojiSelected = (emojiSelected - 1 + emojiMatches.length) % emojiMatches.length;
+    renderEmojiTypeahead();
+    e.preventDefault();
+  } else if (e.key === "Enter" || e.key === "Tab") {
+    applyEmojiCompletion(emojiMatches[emojiSelected]);
+    e.preventDefault();
+  } else if (e.key === "Escape") {
+    closeEmojiTypeahead();
+  }
+});
 
 async function sendChat() {
   const input = document.getElementById("chat-input");
@@ -514,7 +606,8 @@ async function sendChat() {
 
 document.getElementById("chat-send").addEventListener("click", sendChat);
 document.getElementById("chat-input").addEventListener("keypress", (e) => {
-  if (e.key === "Enter") sendChat();
+  // Enter completes the emoji typeahead when open; only send otherwise
+  if (e.key === "Enter" && !emojiTypeaheadOpen()) sendChat();
 });
 
 function updateParticipantsList() {
