@@ -17,7 +17,13 @@ def dashboard():
     for room in rooms:
         room["participant_count"] = participant_counts.get(room["_id"], 0)
 
-    active_recordings = list(db.recordings.find({"status": "active"}))
+    # Client-side recordings land as "complete" immediately (no "active" phase),
+    # so show recent recordings, newest first.
+    active_recordings = list(db.recordings.find().sort("started_at", -1).limit(50))
+    for rec in active_recordings:
+        if rec.get("started_at"):
+            rec["started_at"] = rec["started_at"].isoformat()
+        rec.setdefault("size", 0)
     recent_audit = list(db.audit_log.find().sort("timestamp", -1).limit(20))
     for entry in recent_audit:
         entry["_id"] = str(entry["_id"])
@@ -46,20 +52,20 @@ def dashboard():
 @admin_required
 def create_user():
     data = request.get_json(force=True)
-    email = data.get("email", "").strip().lower()
+    username = data.get("username", "").strip().lower()
     password = data.get("password", "")
     display_name = data.get("display_name", "").strip()
     role = data.get("role", "member")
 
-    if not all([email, password, display_name]):
+    if not all([username, password, display_name]):
         return jsonify({"error": "Missing required fields"}), 400
 
-    if db.users.find_one({"email": email}):
+    if db.users.find_one({"username": username}):
         return jsonify({"error": "User already exists"}), 409
 
     password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode()
     db.users.insert_one({
-        "email": email,
+        "username": username,
         "password_hash": password_hash,
         "display_name": display_name,
         "role": role,
@@ -74,6 +80,40 @@ def create_user():
 def delete_user(user_id):
     from bson import ObjectId
     db.users.delete_one({"_id": ObjectId(user_id)})
+    return jsonify({"status": "deleted"})
+
+
+@admin_bp.route("/api/admin/rooms", methods=["POST"])
+@admin_required
+def create_room():
+    data = request.get_json(force=True)
+    room_id = data.get("room_id", "").strip().lower().replace(" ", "-")
+    display_name = data.get("display_name", "").strip()
+
+    if not all([room_id, display_name]):
+        return jsonify({"error": "Missing required fields"}), 400
+
+    if db.rooms.find_one({"_id": room_id}):
+        return jsonify({"error": "Room already exists"}), 409
+
+    db.rooms.insert_one({
+        "_id": room_id,
+        "display_name": display_name,
+        "active": True,
+        "mode": "discussion",
+        "locked": False,
+        "operator_passphrase": "",
+        "operator_ids": [],
+        "presenter_ids": []
+    })
+    return jsonify({"status": "created", "room_id": room_id})
+
+
+@admin_bp.route("/api/admin/rooms/<room_id>", methods=["DELETE"])
+@admin_required
+def delete_room(room_id):
+    lk.delete_room(room_id)
+    db.rooms.delete_one({"_id": room_id})
     return jsonify({"status": "deleted"})
 
 

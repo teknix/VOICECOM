@@ -84,7 +84,8 @@
     #chat-input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); padding: .4rem .6rem; font-size: .85rem; }
     
     /* Stage: Top Speakers */
-    #stage { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; }
+    /* ponytail: fixed height + internal scroll so the floor never shifts as speakers come/go */
+    #stage { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; height: 150px; overflow-y: auto; align-content: start; }
     #stage:empty::after { content: "No one is speaking"; color: var(--muted); font-size: .85rem; padding: 1rem; text-align: center; width: 100%; grid-column: 1/-1; }
     .stage-item { background: var(--surface); border: 2px solid var(--border); border-radius: 8px; padding: 1rem; text-align: center; transition: border-color 0.2s; }
     .stage-item.speaking { border-color: var(--primary); box-shadow: 0 0 10px var(--primary); }
@@ -160,6 +161,8 @@
     <div id="no-room" style="color:var(--muted);margin-top:2rem;text-align:center;width:100%">Select a channel to join</div>
     
     <div id="room-main" class="hidden">
+      <div id="floor-banner" class="hidden" style="padding:.5rem .75rem;border-radius:6px;margin-bottom:.5rem;font-weight:600;text-align:center"></div>
+
       <div id="stage-area">
         <h2 style="font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: 0 0 .75rem;">On Stage</h2>
         <div id="stage"></div>
@@ -169,6 +172,8 @@
         <h2>The Floor</h2>
         <div id="floor"></div>
       </div>
+
+      <div id="hand-queue" class="hidden"></div>
     </div>
 
     <div id="room-chat" class="hidden">
@@ -221,12 +226,34 @@ let me = null;
 let currentRoom = null;
 let lkRoom = null;
 let globalRoom = null;
-let activeEgressId = null;
 let currentRoomMode = "discussion";
 let joiningRoom = false;
 let pttMode = false;
 let pttKey = localStorage.getItem("pttKey") || "Tab";
 let pttCapturing = false;
+
+// Broadcast hand-raise queue + single speaking floor.
+// Queue is rebuilt on every client from hand_raise data messages, so a controller
+// lowering a hand (or granting the floor) converges everywhere.
+// ponytail: data-channel only — a controller joining mid-session sees an empty
+// queue until people re-raise. Persist raised_hands on the room doc if that bites.
+const raisedHands = new Map(); // user_id -> display_name, insertion-ordered
+let localHandRaised = false;
+let floorHolder = "";
+let roomList = [];
+// Controls (mode, floor, queue, mute) are open to global mods/admins and to
+// per-room operators. Operator status is per-room (operator_ids), recomputed on join.
+let currentRoomController = false;
+function canControl() { return currentRoomController; }
+function isController(roomId) {
+  if (me.role === "admin" || me.role === "moderator") return true;
+  const r = roomList.find(x => x._id === roomId);
+  return !!(r && (r.operator_ids || []).includes(me.user_id));
+}
+function applyControllerUI() {
+  document.getElementById("mod-controls").classList.toggle("hidden", !currentRoomController);
+  document.getElementById("floor-container").classList.toggle("mod-view", currentRoomController);
+}
 
 // Virtualization state
 let allParticipants = [];
@@ -243,10 +270,10 @@ async function init() {
   me = await resp.json();
   document.getElementById("user-display").textContent = me.display_name;
   if (me.role === "admin") document.getElementById("admin-link").classList.remove("hidden");
-  if (me.role === "admin" || me.role === "moderator") {
-    document.getElementById("mod-controls").classList.remove("hidden");
-    document.getElementById("floor-container").classList.add("mod-view");
-  }
+  // Global mods/admins control any room; operators only rooms they're assigned to,
+  // so their controls appear on join. Start with the global-mod default.
+  currentRoomController = me.role === "admin" || me.role === "moderator";
+  applyControllerUI();
   
   // Virtualization scroll listener
   document.getElementById("floor-container").addEventListener("scroll", renderFloor);
@@ -265,6 +292,7 @@ async function init() {
 async function loadRooms() {
   const resp = await fetch("/api/rooms");
   const rooms = await resp.json();
+  roomList = rooms;
   const list = document.getElementById("room-list");
   list.innerHTML = "";
   rooms.forEach(room => {
@@ -332,6 +360,8 @@ async function joinRoom(roomId, displayName, mode) {
 
   currentRoom = roomId;
   currentRoomMode = mode;
+  currentRoomController = isController(roomId);
+  applyControllerUI();
 
   lkRoom = new LivekitClient.Room({
     adaptiveStream: true,
@@ -412,6 +442,11 @@ function setupRoomEvents(room, roomId) {
     updateRoomCountBadge(roomId, +1);
   });
   room.on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
+    if (raisedHands.delete(participant.identity)) renderHandQueue();
+    // Floor holder dropped: the participant_left webhook clears it server-side
+    // (works with no controller present); a present controller also clears it
+    // instantly so the banner doesn't linger. Both idempotent.
+    if (participant.identity === floorHolder && canControl()) giveFloor("");
     refresh();
     updateRoomCountBadge(roomId, -1);
   });
@@ -419,10 +454,18 @@ function setupRoomEvents(room, roomId) {
   room.on(LivekitClient.RoomEvent.RoomMetadataChanged, (metadata) => {
     try {
       const data = JSON.parse(metadata);
+      floorHolder = data.floor || "";
+      if (floorHolder) {
+        raisedHands.delete(floorHolder);
+        if (floorHolder === me.user_id) setHandRaised(false); // got the floor
+      }
       if (data.mode) {
         currentRoomMode = data.mode;
         updateModeUI(data.mode);
       }
+      renderHandQueue();
+      renderFloorBanner();
+      document.getElementById("rec-btn").style.display = canRecord() ? "inline-block" : "none";
     } catch (e) { console.error("Failed to parse room metadata", e); }
   });
   room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, pub, participant) => {
@@ -435,6 +478,7 @@ function setupRoomEvents(room, roomId) {
       el.id = elId;
       el.dataset.roomId = roomId;
       document.getElementById("audio-container").appendChild(el);
+      if (rec && room === lkRoom) recAddTrack(track.mediaStreamTrack); // capture late joiners
       try {
         const meta = JSON.parse(participant.metadata || "{}");
         if (["admin", "moderator", "operator"].includes(meta.role)) {
@@ -451,13 +495,25 @@ function setupRoomEvents(room, roomId) {
   room.on(LivekitClient.RoomEvent.ActiveSpeakersChanged, speakers => {
     activeSpeakerIdentities = new Set(speakers.map(s => s.identity));
     renderStage();
-    renderFloor();
+    // ponytail: only toggle the speaking class; don't rebuild floor rows or the
+    // Mute buttons get destroyed under the user's cursor mid-click.
+    updateFloorSpeaking();
   });
   room.on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
     try {
       const msg = JSON.parse(new TextDecoder().decode(payload));
       if (msg.type === "mode_change") updateModeUI(msg.mode);
-      if (msg.type === "hand_raise" && msg.raised) showHandRaise(msg);
+      if (msg.type === "hand_raise") {
+        if (msg.raised) {
+          raisedHands.set(msg.user_id, msg.display_name);
+          showHandRaise(msg);
+        } else {
+          raisedHands.delete(msg.user_id);
+          if (msg.user_id === me.user_id) setHandRaised(false); // controller lowered mine
+        }
+        renderHandQueue();
+      }
+      if (msg.type === "recording") showRecordingBanner(msg.active, msg.by);
       if (msg.type === "chat") appendChatMessage(participant?.name || participant?.identity || "?", msg.message);
     } catch(e) { console.warn("DataReceived parse error", e); }
   });
@@ -682,6 +738,12 @@ function renderStage() {
   });
 }
 
+function updateFloorSpeaking() {
+  document.querySelectorAll("#floor .floor-item").forEach(div => {
+    div.classList.toggle("speaking", activeSpeakerIdentities.has(div.dataset.identity));
+  });
+}
+
 function renderFloor() {
   if (!lkRoom) return;
   const container = document.getElementById("floor-container");
@@ -759,7 +821,7 @@ function renderFloor() {
       
       div.appendChild(roleBadge);
 
-      if (!isLocal && (me.role === 'admin' || me.role === 'moderator')) {
+      if (!isLocal && canControl()) {
         const muteBtn = document.createElement("button");
         muteBtn.className = "btn";
         muteBtn.style.cssText = "padding:2px 6px;font-size:.7rem;background:var(--danger);margin-left:4px";
@@ -788,8 +850,9 @@ function updateModeUI(mode) {
   document.getElementById("mode-btn").textContent =
     mode === "discussion" ? "Switch to Broadcast" : "Switch to Discussion";
 
-  const isMod = me.role === "admin" || me.role === "moderator";
-  if (mode === "broadcast" && !isMod) {
+  // A controller, or the current floor holder, may speak in broadcast.
+  const canSpeak = canControl() || floorHolder === me.user_id;
+  if (mode === "broadcast" && !canSpeak) {
     document.getElementById("mic-btn").disabled = true;
     document.getElementById("hand-btn").style.display = "inline-block";
     document.getElementById("ptt-hint").classList.add("hidden");
@@ -800,6 +863,10 @@ function updateModeUI(mode) {
     updatePttHint();
     pttMode = true;
   }
+  if (mode !== "broadcast") { raisedHands.clear(); setHandRaised(false); floorHolder = ""; }
+  document.getElementById("rec-btn").style.display = canRecord() ? "inline-block" : "none";
+  renderHandQueue();
+  renderFloorBanner();
 }
 
 function showHandRaise(msg) {
@@ -815,8 +882,14 @@ async function leaveRoom() {
     el.pause();
     el.srcObject = null;
   });
-  if (lkRoom) { await lkRoom.disconnect(); lkRoom = null; }
-  if (globalRoom) { await globalRoom.disconnect(); globalRoom = null; }
+  // Null the globals before disconnecting so the Disconnected event handler's
+  // stale-handler guard (room !== lkRoom) bails out instead of reconnecting.
+  const leavingRoom = lkRoom;
+  const leavingGlobal = globalRoom;
+  lkRoom = null;
+  globalRoom = null;
+  if (leavingRoom) { await leavingRoom.disconnect(); }
+  if (leavingGlobal) { await leavingGlobal.disconnect(); }
   document.getElementById("audio-container").innerHTML = "";
   document.getElementById("floor").innerHTML = "";
   document.getElementById("chat-messages").innerHTML = "";
@@ -829,6 +902,10 @@ async function leaveRoom() {
   document.getElementById("floor-container").classList.add("hidden");
   document.getElementById("reconnect-banner").style.display = "none";
   currentRoom = null;
+  raisedHands.clear(); localHandRaised = false; floorHolder = "";
+  document.getElementById("floor-banner").classList.add("hidden");
+  currentRoomController = me.role === "admin" || me.role === "moderator";
+  applyControllerUI();
   setStatus("Not connected");
   document.querySelectorAll(".room-item").forEach(el => el.classList.remove("active"));
   document.body.classList.remove("hot-mic");
@@ -894,8 +971,20 @@ async function toggleMic(enabled) {
   }
   const audioTrack = lkRoom.localParticipant.getTrackPublication(LivekitClient.Track.Source.Microphone);
   if (audioTrack) {
-    if (enabled) await audioTrack.unmute();
-    else await audioTrack.mute();
+    if (enabled) {
+      // iOS WebKit (incl. Firefox/Chrome iOS) suspends the audio session on mute and
+      // ends the mic track after interruptions, so unmute() alone publishes silence.
+      // Resume the session and reacquire the mic if its underlying track died — this
+      // call is a direct user gesture (button/PTT), which iOS requires for getUserMedia.
+      try { await lkRoom.startAudio(); } catch (e) {}
+      const mst = audioTrack.track && audioTrack.track.mediaStreamTrack;
+      if (audioTrack.track && (!mst || mst.readyState === "ended" || mst.muted)) {
+        try { await audioTrack.track.restartTrack(); } catch (e) {}
+      }
+      await audioTrack.unmute();
+    } else {
+      await audioTrack.mute();
+    }
     document.getElementById("mic-btn").textContent = enabled ? "🎤 Mute" : "🎤 Unmute";
     document.getElementById("mic-btn").classList.toggle("active", enabled);
     document.body.classList.toggle("hot-mic", enabled);
@@ -982,12 +1071,105 @@ document.addEventListener("keyup", async (e) => {
   }
 });
 
-// Hand raise
+// Hand raise — own button toggles raise/lower
 document.getElementById("hand-btn").addEventListener("click", () => {
   if (!lkRoom) return;
-  const msg = JSON.stringify({ type: "hand_raise", user_id: me.user_id, display_name: me.display_name, raised: true });
-  lkRoom.localParticipant.publishData(new TextEncoder().encode(msg), { reliable: true });
+  publishHand(me.user_id, me.display_name, !localHandRaised);
+  setHandRaised(!localHandRaised);
 });
+
+function publishHand(userId, displayName, raised) {
+  const msg = JSON.stringify({ type: "hand_raise", user_id: userId, display_name: displayName, raised });
+  lkRoom.localParticipant.publishData(new TextEncoder().encode(msg), { reliable: true });
+  if (raised) raisedHands.set(userId, displayName); else raisedHands.delete(userId);
+  renderHandQueue();
+}
+
+function setHandRaised(raised) {
+  localHandRaised = raised;
+  document.getElementById("hand-btn").textContent = raised ? "✋ Lower hand" : "✋ Raise hand";
+}
+
+async function giveFloor(userId) {
+  await fetch(`/api/rooms/${currentRoom}/floor`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content },
+    body: JSON.stringify({ user_id: userId }),
+  });
+  // Server broadcasts the new floor via room metadata; queue updates there too.
+  raisedHands.delete(userId);
+  renderHandQueue();
+}
+
+// Controller queue: give floor to / lower a raised hand
+document.getElementById("hand-queue").addEventListener("click", (e) => {
+  const give = e.target.closest("[data-floor]");
+  const lower = e.target.closest("[data-lower]");
+  if (give) giveFloor(give.dataset.floor);
+  else if (lower) publishHand(lower.dataset.lower, "", false); // lower it for everyone
+});
+
+function renderFloorBanner() {
+  const banner = document.getElementById("floor-banner");
+  if (currentRoomMode !== "broadcast" || !floorHolder) {
+    banner.classList.add("hidden");
+    return;
+  }
+  banner.classList.remove("hidden");
+  if (floorHolder === me.user_id) {
+    banner.textContent = "🎙 You have the floor — unmute to speak";
+    banner.style.background = "var(--primary)";
+    banner.style.color = "#fff";
+  } else {
+    const p = allParticipants.find(x => x.identity === floorHolder);
+    banner.textContent = "🎙 " + (p?.name || floorHolder) + " has the floor";
+    banner.style.background = "var(--surface)";
+    banner.style.color = "var(--text)";
+  }
+}
+
+function renderHandQueue() {
+  const box = document.getElementById("hand-queue");
+  if (!canControl() || currentRoomMode !== "broadcast") { box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+  box.innerHTML = "";
+
+  const h = document.createElement("h2");
+  h.textContent = "Raised hands";
+  box.appendChild(h);
+
+  if (raisedHands.size === 0) {
+    const empty = document.createElement("div");
+    empty.style.cssText = "color:var(--muted);font-size:.85rem";
+    empty.textContent = "No hands raised";
+    box.appendChild(empty);
+    return;
+  }
+
+  for (const [uid, name] of raisedHands) {
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;align-items:center;gap:.5rem;padding:.25rem 0";
+
+    const who = document.createElement("span");
+    who.style.flex = "1";
+    who.textContent = "✋ " + (name || uid);
+    row.appendChild(who);
+
+    const give = document.createElement("button");
+    give.className = "btn btn-primary";
+    give.dataset.floor = uid;
+    give.textContent = "🎙 Give floor";
+    row.appendChild(give);
+
+    const lower = document.createElement("button");
+    lower.className = "btn btn-secondary";
+    lower.dataset.lower = uid;
+    lower.textContent = "Lower";
+    row.appendChild(lower);
+
+    box.appendChild(row);
+  }
+}
 
 // Density toggle
 document.getElementById("density-toggle").addEventListener("click", () => {
@@ -1036,31 +1218,94 @@ document.getElementById("mode-btn").addEventListener("click", async () => {
   });
 });
 
-// Recording
-document.getElementById("rec-btn").addEventListener("click", async () => {
-  if (!currentRoom) return;
-  if (!activeEgressId) {
-    const resp = await fetch("/api/recordings/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-CSRFToken": document.querySelector("meta[name=\"csrf-token\"]").content },
-      body: JSON.stringify({ room_id: currentRoom }),
-    });
-    if (resp.ok) {
-      const data = await resp.json();
-      activeEgressId = data.egress_id;
-      document.getElementById("rec-btn").textContent = "⏹ Stop Recording";
-      document.getElementById("rec-btn").classList.add("btn-danger");
+// Recording — client-side mixed audio, no Chrome/egress.
+// In broadcast mode only the presenter (controller or floor holder) may record.
+function canRecord() {
+  if (currentRoomMode === "broadcast") return canControl() || floorHolder === me.user_id;
+  return true;
+}
+let rec = null; // { mr, ctx, dest, sources(Map), chunks, startedMs }
+
+function recAddTrack(mst) {
+  if (!rec || !mst || rec.sources.has(mst.id)) return;
+  const src = rec.ctx.createMediaStreamSource(new MediaStream([mst]));
+  src.connect(rec.dest);
+  rec.sources.set(mst.id, src);
+}
+
+async function startClientRecording() {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  // A fresh AudioContext starts "suspended"; without resume() the mixing graph
+  // never runs and MediaStreamDestination emits a valid-but-silent Opus track.
+  // The record click is the user gesture that lets resume() succeed.
+  try { await ctx.resume(); } catch (e) {}
+  const dest = ctx.createMediaStreamDestination();
+  rec = { mr: null, ctx, dest, sources: new Map(), chunks: [], startedMs: Date.now() };
+  // Mix everyone currently audible: local mic + all subscribed remote audio tracks.
+  const mic = lkRoom.localParticipant.getTrackPublication(LivekitClient.Track.Source.Microphone);
+  if (mic && mic.track) recAddTrack(mic.track.mediaStreamTrack);
+  lkRoom.remoteParticipants.forEach(p => p.audioTrackPublications.forEach(pub => {
+    if (pub.track) recAddTrack(pub.track.mediaStreamTrack);
+  }));
+  rec.mr = new MediaRecorder(dest.stream, { mimeType: "audio/webm" });
+  rec.mr.ondataavailable = e => { if (e.data && e.data.size) rec.chunks.push(e.data); };
+  rec.mr.onstop = uploadRecording;
+  rec.mr.start(1000); // 1s timeslices → a crash loses ≤1s
+  setRecordingState(true);
+  broadcastRecording(true);
+}
+
+async function uploadRecording() {
+  const blob = new Blob(rec.chunks, { type: "audio/webm" });
+  const startedMs = rec.startedMs, room = currentRoom;
+  try { rec.ctx.close(); } catch (e) {}
+  rec = null;
+  if (!blob.size) return;
+  const fd = new FormData();
+  fd.append("room_id", room);
+  fd.append("started_ms", String(startedMs));
+  fd.append("file", blob, `${room}_${startedMs}.webm`);
+  const resp = await fetch("/api/recordings/upload", {
+    method: "POST",
+    headers: { "X-CSRFToken": document.querySelector("meta[name=\"csrf-token\"]").content },
+    body: fd,
+  });
+  if (!resp.ok) setStatus("Recording upload failed: " + resp.status);
+}
+
+function setRecordingState(active) {
+  const btn = document.getElementById("rec-btn");
+  btn.textContent = active ? "⏹ Stop Recording" : "⏺ Record";
+  btn.classList.toggle("btn-danger", active);
+  showRecordingBanner(active, me.display_name || me.user_id); // banner for the recorder too
+}
+
+function broadcastRecording(active) {
+  if (!lkRoom) return;
+  const msg = { type: "recording", active, by: me.display_name || me.user_id };
+  lkRoom.localParticipant.publishData(new TextEncoder().encode(JSON.stringify(msg)), { reliable: true });
+}
+
+function showRecordingBanner(active, by) {
+  let el = document.getElementById("recording-banner");
+  if (active) {
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "recording-banner";
+      el.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#ef4444;color:#fff;text-align:center;padding:.35rem;font-weight:600;font-size:.85rem;";
+      document.body.appendChild(el);
     }
-  } else {
-    await fetch("/api/recordings/stop", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-CSRFToken": document.querySelector("meta[name=\"csrf-token\"]").content },
-      body: JSON.stringify({ egress_id: activeEgressId }),
-    });
-    activeEgressId = null;
-    document.getElementById("rec-btn").textContent = "⏺ Record";
-    document.getElementById("rec-btn").classList.remove("btn-danger");
+    el.textContent = `🔴 Recording in progress — ${by}`;
+  } else if (el) {
+    el.remove();
   }
+}
+
+document.getElementById("rec-btn").addEventListener("click", async () => {
+  if (!currentRoom || !lkRoom) return;
+  if (!canRecord()) { setStatus("Only the presenter can record during broadcast"); return; }
+  if (!rec) await startClientRecording();
+  else { setRecordingState(false); broadcastRecording(false); rec.mr.stop(); }
 });
 
 // Leave
