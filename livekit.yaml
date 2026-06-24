@@ -2,30 +2,25 @@ port: 7880
 rtc:
   tcp_port: 7881
   udp_port: 7882
-  # REQUIRED: set node_ip to the server's LAN or public IP so WebRTC clients
-  # can reach it. Without this, LiveKit advertises its internal Docker IP and
-  # clients outside the Docker host get no audio.
-  # Option A: use_external_ip: true  (if server has a routable public IP)
-  # Option B: node_ip: 192.168.1.x  (explicit LAN/private IP)
   use_external_ip: false
-  node_ip: 192.168.3.205
+  node_ip: 100.42.169.34
   turn_servers:
-    - host: coturn
+    - host: voicecom.turbulent.net
       port: 3478
       protocol: udp
       username: turnuser
-      credential: turnpass
+      credential: 8-vycN_EfBfhMdqm0sQRcZZ8K-E
 
 redis:
   address: redis:6379
 
 keys:
-  ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
+  voicecom-prod: dceff0c8180d4ce41fc39c6f748051f5394d80ba5125f4f8577ff1f483c1f4ac
 
 room:
-  max_participants: 2000  # 50 members + 5 headroom
+  max_participants: 2000
 
 webhook:
-  api_key: ${LIVEKIT_API_KEY}
+  api_key: voicecom-prod
   urls:
     - http://flask:5000/livekit/webhook

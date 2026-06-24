@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import json
 import gevent
+import bcrypt
 from flask import Blueprint, jsonify, request, session
 from gevent.pool import Pool
 from .middleware import login_required, mod_required
@@ -47,6 +48,30 @@ def me():
     })
 
 
+@rooms_bp.route("/api/me/password", methods=["POST"])
+@login_required
+def change_password():
+    if session.get("user_id") == "super-admin":
+        return jsonify({"error": "Super admin password is managed via server config."}), 400
+    data = request.get_json(force=True)
+    current = data.get("current_password", "")
+    new_pass = data.get("new_password", "")
+    if not current or not new_pass:
+        return jsonify({"error": "Missing fields."}), 400
+    if len(new_pass) < 8:
+        return jsonify({"error": "Password must be at least 8 characters."}), 400
+    from bson import ObjectId
+    try:
+        user = db.users.find_one({"_id": ObjectId(session["user_id"])})
+    except Exception:
+        user = None
+    if not user or not bcrypt.checkpw(current.encode(), user["password_hash"].encode()):
+        return jsonify({"error": "Current password is incorrect."}), 403
+    new_hash = bcrypt.hashpw(new_pass.encode(), bcrypt.gensalt()).decode()
+    db.users.update_one({"_id": user["_id"]}, {"$set": {"password_hash": new_hash}})
+    return jsonify({"status": "updated"})
+
+
 @rooms_bp.route("/api/rooms")
 @login_required
 def list_rooms():
@@ -89,6 +114,10 @@ def _set_room_mode(room_id, room, new_mode):
         except: pass # Best effort for existing meta
         
         current_meta["mode"] = new_mode
+        # `floor` = the single transient audience speaker; only meaningful in
+        # broadcast. toggle_mode clears floor_holder before a switch, so a switch
+        # always lands with no floor; sync preserves the active one.
+        current_meta["floor"] = (room.get("floor_holder") or "") if new_mode == "broadcast" else ""
         lk.update_room_metadata(room_id, json.dumps(current_meta))
     except Exception as e:
         return {"error": f"LiveKit update failed: {e}"}, 502
@@ -102,11 +131,12 @@ def _set_room_mode(room_id, room, new_mode):
             try:
                 participants = lk.list_participants(room_id)
                 presenter_ids = set(room.get("presenter_ids", []))
+                floor_holder = room.get("floor_holder")
                 pool = Pool(10)
                 for p in participants:
                     p_meta = json.loads(p.metadata) if p.metadata else {}
                     role = p_meta.get("role", "member")
-                    if role == "member" and p.identity not in presenter_ids:
+                    if role == "member" and p.identity not in presenter_ids and p.identity != floor_holder:
                         pool.spawn(lk.update_participant, room_id, p.identity, can_publish=False)
                 pool.join()
             except Exception as e:
@@ -127,6 +157,10 @@ def toggle_mode(room_id):
     room = db.rooms.find_one({"_id": room_id})
     if not room:
         return jsonify({"error": "Room not found"}), 404
+
+    # A mode switch ends the current floor; re-grant afterward if needed.
+    room["floor_holder"] = None
+    db.rooms.update_one({"_id": room_id}, {"$set": {"floor_holder": None}})
 
     res, status = _set_room_mode(room_id, room, new_mode)
     if status == 200:
@@ -242,6 +276,53 @@ def manage_presenter(room_id):
 
     audit_log(room_id, f"presenter_{action}", session["user_id"], {"target": target_user_id})
     return jsonify({"action": action, "user_id": target_user_id})
+
+
+@rooms_bp.route("/api/rooms/<room_id>/floor", methods=["POST"])
+@mod_required
+def grant_floor(room_id):
+    """Single transient floor for broadcast Q&A: hand it to one audience member,
+    taking it from whoever held it. Separate from presenter_ids so the lecturer/
+    panel stay live while a questioner speaks. Empty user_id revokes the floor.
+    Open to per-room operators via mod_required, so a no-mod room can run Q&A."""
+    data = request.get_json(force=True)
+    target = data.get("user_id", "").strip()
+
+    room = db.rooms.find_one({"_id": room_id})
+    if not room:
+        return jsonify({"error": "Room not found"}), 404
+
+    prev = room.get("floor_holder")
+    db.rooms.update_one({"_id": room_id}, {"$set": {"floor_holder": target or None}})
+
+    # Broadcast the floor to every client; merge so we don't clobber `mode`.
+    try:
+        raw = lk.get_room_metadata(room_id)
+        meta = json.loads(raw) if raw else {}
+    except Exception:
+        meta = {}
+    meta["floor"] = target
+    try:
+        lk.update_room_metadata(room_id, json.dumps(meta))
+    except Exception:
+        pass  # clients still get the grant via ParticipantPermissionsChanged
+
+    # Swap publish grants. Don't mute a previous holder who also speaks as a
+    # presenter — only the transient floor is taken from them.
+    if prev and prev != target and prev not in (room.get("presenter_ids") or []):
+        try:
+            lk.update_participant(room_id, prev, can_publish=False)
+        except Exception:
+            pass
+    if target:
+        try:
+            lk.update_participant(room_id, target, can_publish=True)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 502
+
+    audit_log(room_id, "floor_grant" if target else "floor_revoke",
+              session["user_id"], {"target": target})
+    return jsonify({"floor": target})
 
 
 def audit_log(room_id, event, actor, meta=None):

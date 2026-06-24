@@ -45,8 +45,13 @@ def create_app():
             "role": session.get("role"),
             "avatar_url": session.get("avatar_url")
         }
-        return render_template("voice.html", 
+        return render_template("voice.html",
                                livekit_url=os.environ["LIVEKIT_HOST"],
                                me=user)
+
+    @app.route("/user_avatars/<path:filename>")
+    def user_avatars(filename):
+        # Absorb Zulip-style avatar requests (relative URLs stored in participant metadata)
+        return "", 204
 
     return app

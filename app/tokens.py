@@ -27,7 +27,12 @@ def issue_token(user_id: str, display_name: str, room_id: str, role: str, sector
         actual_role = "member"
 
     if mode == "broadcast":
-        is_presenter = actual_role in ("admin", "moderator", "operator") or user_id in presenter_ids
+        # Persistent presenters (lecturer/panel) plus the one transient floor
+        # holder (a questioner promoted from the hand queue) both publish, so Q&A
+        # is a real two-way conversation rather than turn-taking on one mic.
+        is_presenter = (actual_role in ("admin", "moderator", "operator")
+                        or user_id in presenter_ids
+                        or user_id == room.get("floor_holder"))
         grants.can_publish = is_presenter
         grants.can_publish_data = is_presenter
         grants.can_subscribe = True

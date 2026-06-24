@@ -14,5 +14,5 @@ ZULIP_API_KEY = os.environ.get("ZULIP_API_KEY", "")
 ENABLE_ZULIP_AUTH = os.environ.get("ENABLE_ZULIP_AUTH", "false").lower() == "true"
 
 # Super Admin (Recovery)
-SUPER_ADMIN_EMAIL = os.environ.get("SUPER_ADMIN_EMAIL", "admin@voicecom.local")
+SUPER_ADMIN_USERNAME = os.environ.get("SUPER_ADMIN_USERNAME", "admin")
 SUPER_ADMIN_HASH = os.environ.get("SUPER_ADMIN_HASH", "") # bcrypt hash
