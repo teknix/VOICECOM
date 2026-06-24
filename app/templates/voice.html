@@ -126,6 +126,9 @@
     
     #mic-btn.active { background: #166534; color: white; }
     #god-mic-btn.active { background: #ef4444 !important; color: white; }
+    #hand-btn { font-size: 1.05rem; line-height: 1; padding: .35rem .55rem; }
+    #hand-btn.raised { background: #f59e0b; color: #fff; animation: handpulse 1.4s ease-in-out infinite; }
+    @keyframes handpulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.12); } }
     #status-bar { padding: .4rem 1.25rem; background: var(--surface); font-size: .75rem; color: var(--muted); border-top: 1px solid var(--border); }
     .hidden { display: none !important; }
   </style>
@@ -162,6 +165,7 @@
     
     <div id="room-main" class="hidden">
       <div id="floor-banner" class="hidden" style="padding:.5rem .75rem;border-radius:6px;margin-bottom:.5rem;font-weight:600;text-align:center"></div>
+      <div id="listen-banner" class="hidden" style="padding:.5rem .75rem;border-radius:6px;margin-bottom:.5rem;font-weight:600;text-align:center;background:#4a1d6e;color:#e9d5ff"></div>
 
       <div id="stage-area">
         <h2 style="font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: 0 0 .75rem;">On Stage</h2>
@@ -188,7 +192,7 @@
 
   <div id="controls" class="hidden">
     <button class="btn" id="mic-btn" disabled>🎤 Mute</button>
-    <button class="btn btn-secondary" id="hand-btn" style="display:none">✋ Raise hand</button>
+    <button class="btn btn-secondary" id="hand-btn" style="display:none" title="Raise hand" aria-label="Raise hand">✋</button>
     <span id="ptt-hint" class="hidden">Hold <span id="ptt-key-label"></span> to talk <button id="ptt-config-btn" title="Change PTT key" style="background:none;border:1px solid #555;border-radius:3px;color:#aaa;cursor:pointer;font-size:.7rem;padding:.1rem .35rem;margin-left:.3rem">⚙</button></span>
     <div style="flex:1"></div>
     <div id="mod-controls" class="hidden">
@@ -228,6 +232,7 @@ let lkRoom = null;
 let globalRoom = null;
 let currentRoomMode = "discussion";
 let joiningRoom = false;
+let pendingJoin = null; // latest room requested while a join is in flight
 let pttMode = false;
 let pttKey = localStorage.getItem("pttKey") || "Tab";
 let pttCapturing = false;
@@ -283,7 +288,7 @@ async function init() {
   // Auto-join if room in URL
   const urlParams = new URLSearchParams(window.location.search);
   const autoRoom = urlParams.get('room');
-  if (autoRoom) {
+  if (autoRoom && autoRoom !== "global-announcement") {
     const room = rooms.find(r => r._id === autoRoom);
     if (room) joinRoom(room._id, room.display_name, room.mode);
   }
@@ -291,7 +296,8 @@ async function init() {
 
 async function loadRooms() {
   const resp = await fetch("/api/rooms");
-  const rooms = await resp.json();
+  // global-announcement is a system room for God Mic only — not a joinable channel.
+  const rooms = (await resp.json()).filter(r => r._id !== "global-announcement");
   roomList = rooms;
   const list = document.getElementById("room-list");
   list.innerHTML = "";
@@ -324,7 +330,8 @@ function updateRoomCountBadge(roomId, delta) {
 }
 
 async function joinRoom(roomId, displayName, mode) {
-  if (joiningRoom) return;
+  // Don't drop rapid room clicks — remember the latest and run it when this join ends.
+  if (joiningRoom) { pendingJoin = [roomId, displayName, mode]; return; }
   joiningRoom = true;
   try {
   if (window.innerWidth <= 768) {
@@ -341,8 +348,10 @@ async function joinRoom(roomId, displayName, mode) {
       el.remove();
     }
   });
-  if (lkRoom) { await lkRoom.disconnect(); lkRoom = null; }
-  // globalRoom (God Mic / announcements) stays connected across channel switches.
+  // Tear down the previous room in the BACKGROUND. Awaiting a slow disconnect here
+  // was the "delayed stop" that blocked the next room and lost its audio.
+  if (lkRoom) { const old = lkRoom; lkRoom = null; old.disconnect().catch(() => {}); }
+  // globalRoom (God Mic) stays connected across channel switches.
 
   document.querySelectorAll(".room-item").forEach(el => el.classList.remove("active"));
   document.querySelector(`.room-item[data-id="${roomId}"]`)?.classList.add("active");
@@ -388,28 +397,11 @@ async function joinRoom(roomId, displayName, mode) {
   updateModeUI(mode);
   setStatus("Connected to " + displayName);
 
-  // Connect globalRoom in the background — never block UI on this.
-  if (roomId !== "global-announcement" && !globalRoom) {
-    (async () => {
-      try {
-        const gResp = await fetch("/api/token", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content },
-          body: JSON.stringify({ room_id: "global-announcement" })
-        });
-        if (!gResp.ok) return;
-        const { token: gToken } = await gResp.json();
-        globalRoom = new LivekitClient.Room();
-        setupRoomEvents(globalRoom, "global-announcement");
-        await globalRoom.connect(LIVEKIT_WS_URL, gToken);
-        console.log("Joined Global Announcement");
-      } catch (ge) {
-        console.warn("Global room join failed:", ge);
-      }
-    })();
-  }
+  // No background global-announcement join — it caused general's audio to mirror
+  // in for presenters. God Mic connects to it on demand instead (see ensureGlobalRoom).
   } finally {
     joiningRoom = false;
+    if (pendingJoin) { const p = pendingJoin; pendingJoin = null; joinRoom(p[0], p[1], p[2]); }
   }
 }
 
@@ -856,13 +848,28 @@ function updateModeUI(mode) {
     document.getElementById("mic-btn").disabled = true;
     document.getElementById("hand-btn").style.display = "inline-block";
     document.getElementById("ptt-hint").classList.add("hidden");
+    // Auto-mute the moment broadcast engages — no click needed. Belt-and-suspenders
+    // with the server-side can_publish revoke, and closes the "still hot" window.
+    const at = lkRoom && lkRoom.localParticipant.getTrackPublication(LivekitClient.Track.Source.Microphone);
+    if (at && !at.isMuted) at.mute().catch(() => {});
+    document.getElementById("mic-btn").textContent = "🎤 Muted";
+    document.getElementById("mic-btn").classList.remove("active");
+    document.body.classList.remove("hot-mic");
   } else {
     document.getElementById("mic-btn").disabled = false;
     document.getElementById("hand-btn").style.display = "none";
     document.getElementById("ptt-hint").classList.remove("hidden");
     updatePttHint();
     pttMode = true;
+    // Reflect real mute state — after broadcast force-mute the track is muted, so
+    // show "Unmute" rather than a stale "Mute" the user thinks means they're live.
+    const at = lkRoom && lkRoom.localParticipant.getTrackPublication(LivekitClient.Track.Source.Microphone);
+    const muted = at ? at.isMuted : true;
+    document.getElementById("mic-btn").textContent = muted ? "🎤 Unmute" : "🎤 Mute";
+    document.getElementById("mic-btn").classList.toggle("active", !muted);
+    document.body.classList.toggle("hot-mic", !muted);
   }
+  updateListenBanner();
   if (mode !== "broadcast") { raisedHands.clear(); setHandRaised(false); floorHolder = ""; }
   document.getElementById("rec-btn").style.display = canRecord() ? "inline-block" : "none";
   renderHandQueue();
@@ -991,6 +998,22 @@ async function toggleMic(enabled) {
   }
 }
 
+// Connect to global-announcement on demand (no background join anymore).
+async function ensureGlobalRoom() {
+  if (globalRoom) return globalRoom;
+  const resp = await fetch("/api/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content },
+    body: JSON.stringify({ room_id: "global-announcement" })
+  });
+  if (!resp.ok) return null;
+  const { token } = await resp.json();
+  globalRoom = new LivekitClient.Room();
+  setupRoomEvents(globalRoom, "global-announcement");
+  await globalRoom.connect(LIVEKIT_WS_URL, token);
+  return globalRoom;
+}
+
 async function toggleGodMic(enabled) {
   if (!globalRoom) return;
   const audioTrack = globalRoom.localParticipant.getTrackPublication(LivekitClient.Track.Source.Microphone);
@@ -1007,6 +1030,7 @@ async function toggleGodMic(enabled) {
 }
 
 document.getElementById("god-mic-btn").addEventListener("click", async () => {
+  if (!await ensureGlobalRoom()) { setStatus("God Mic unavailable"); return; }
   const audioTrack = globalRoom?.localParticipant.getTrackPublication(LivekitClient.Track.Source.Microphone);
   const isMuted = audioTrack ? audioTrack.isMuted : true;
   await toggleGodMic(isMuted);
@@ -1087,7 +1111,26 @@ function publishHand(userId, displayName, raised) {
 
 function setHandRaised(raised) {
   localHandRaised = raised;
-  document.getElementById("hand-btn").textContent = raised ? "✋ Lower hand" : "✋ Raise hand";
+  const handBtn = document.getElementById("hand-btn");
+  handBtn.title = raised ? "Lower hand" : "Raise hand";
+  handBtn.setAttribute("aria-label", handBtn.title);
+  handBtn.classList.toggle("raised", raised); // icon stays ✋; highlight when raised
+  updateListenBanner();
+}
+
+// Persistent listen-only notice for muted audience in broadcast.
+function updateListenBanner() {
+  const b = document.getElementById("listen-banner");
+  if (!b) return;
+  const canSpeak = canControl() || floorHolder === me.user_id;
+  if (currentRoomMode === "broadcast" && !canSpeak) {
+    b.classList.remove("hidden");
+    b.textContent = localHandRaised
+      ? "✋ Hand raised — waiting for the presenter to give you the floor"
+      : "📢 Broadcast mode — you're muted (listen only). Raise your hand to request the floor.";
+  } else {
+    b.classList.add("hidden");
+  }
 }
 
 async function giveFloor(userId) {

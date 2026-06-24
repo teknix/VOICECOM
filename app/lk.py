@@ -37,7 +37,8 @@ async def _list_participants(room_name: str):
         return list(resp.participants)
 
 
-async def _update_participant(room_name: str, identity: str, can_publish: bool, can_subscribe: bool = True):
+async def _update_participant(room_name: str, identity: str, can_publish: bool,
+                              can_subscribe: bool = True, can_publish_data: bool = True):
     async with api.LiveKitAPI(
         url=LIVEKIT_INTERNAL_URL,
         api_key=LIVEKIT_API_KEY,
@@ -49,7 +50,9 @@ async def _update_participant(room_name: str, identity: str, can_publish: bool, 
             permission=api.ParticipantPermission(
                 can_publish=can_publish,
                 can_subscribe=can_subscribe,
-                can_publish_data=can_publish,
+                # Always allow DATA (hand-raise, chat) even when audio is muted —
+                # tying this to can_publish was stripping hand-raise on broadcast mute.
+                can_publish_data=can_publish_data,
             ),
         ))
 
@@ -137,8 +140,9 @@ def list_participants(room_name: str):
     return lk_run(_list_participants(room_name))
 
 
-def update_participant(room_name: str, identity: str, can_publish: bool, can_subscribe: bool = True):
-    lk_run(_update_participant(room_name, identity, can_publish, can_subscribe))
+def update_participant(room_name: str, identity: str, can_publish: bool,
+                       can_subscribe: bool = True, can_publish_data: bool = True):
+    lk_run(_update_participant(room_name, identity, can_publish, can_subscribe, can_publish_data))
 
 
 def update_room_metadata(room_name: str, metadata: str):

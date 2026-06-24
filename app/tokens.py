@@ -34,7 +34,9 @@ def issue_token(user_id: str, display_name: str, room_id: str, role: str, sector
                         or user_id in presenter_ids
                         or user_id == room.get("floor_holder"))
         grants.can_publish = is_presenter
-        grants.can_publish_data = is_presenter
+        # Everyone may publish DATA (hand-raise, chat) even when muted — only audio
+        # is gated. Without this, audience hand-raises never leave the sender.
+        grants.can_publish_data = True
         grants.can_subscribe = True
     else:
         grants.can_publish = True

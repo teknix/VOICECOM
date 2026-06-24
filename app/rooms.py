@@ -142,6 +142,19 @@ def _set_room_mode(room_id, room, new_mode):
             except Exception as e:
                 print(f"Background enforcement failed: {e}")
         gevent.spawn(enforce_mute)
+    else:
+        # Switching to discussion: restore publish rights revoked during broadcast,
+        # otherwise members stay permission-muted and can never unmute.
+        def restore_publish():
+            try:
+                participants = lk.list_participants(room_id)
+                pool = Pool(10)
+                for p in participants:
+                    pool.spawn(lk.update_participant, room_id, p.identity, can_publish=True)
+                pool.join()
+            except Exception as e:
+                print(f"Restore publish failed: {e}")
+        gevent.spawn(restore_publish)
 
     return {"mode": new_mode}, 200
 
