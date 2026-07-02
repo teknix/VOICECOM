@@ -77,7 +77,7 @@ Use the included `voicecom.apache.conf` template.
 | `DEV_MODE` | Set to `false` in production to enable public IP detection. |
 | `ENABLE_ZULIP_AUTH` | Toggles Zulip credential proxy (`true`/`false`). |
 | `SUPER_ADMIN_HASH` | Bcrypt hash for the emergency recovery user. |
-| `LIVEKIT_HOST` | Public WebSocket URL (e.g., `wss://voicecom.net/rtc`). |
+| `LIVEKIT_HOST` | Public WebSocket URL, **no path** (e.g., `wss://voicecom.net`). The LiveKit JS client appends `/rtc` itself — putting `/rtc` here doubles the path (`/rtc/rtc` → 404) unless the reverse proxy strips the prefix. |
 | `ACCESS_PASSPHRASE` | (Legacy) Password for the default 'Member' role. |
 
 ---
