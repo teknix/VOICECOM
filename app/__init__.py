@@ -54,4 +54,11 @@ def create_app():
         # Absorb Zulip-style avatar requests (relative URLs stored in participant metadata)
         return "", 204
 
+    try:
+        import os as _o
+        if _o.getenv("ANGINX_API_KEY") and _o.getenv("ANGINX_DOMAIN"):
+            from .register_on_start import register_with_anginx
+            register_with_anginx(anginx_url=_o.getenv("ANGINX_URL","http://anginx"),key=_o.getenv("ANGINX_API_KEY"),domain=_o.getenv("ANGINX_DOMAIN"),port=int(_o.getenv("ANGINX_PORT","5010")),name=_o.getenv("ANGINX_NAME","voicecom-flask"),host=_o.getenv("ANGINX_HOST") or None)
+    except Exception as _e:
+        print(f"[anginx] announce skipped: {_e}")
     return app
