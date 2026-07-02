@@ -2,7 +2,7 @@ listening-port=3478
 tls-listening-port=5349
 fingerprint
 lt-cred-mech
-user=turnuser:8-vycN_EfBfhMdqm0sQRcZZ8K-E
+user=turnuser:${COTURN_PASS}
 realm=voicecom.turbulent.net
 external-ip=100.42.169.34
 no-multicast-peers

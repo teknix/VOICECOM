@@ -9,13 +9,13 @@ rtc:
       port: 3478
       protocol: udp
       username: turnuser
-      credential: 8-vycN_EfBfhMdqm0sQRcZZ8K-E
+      credential: ${COTURN_PASS}
 
 redis:
   address: redis:6379
 
 keys:
-  voicecom-prod: dceff0c8180d4ce41fc39c6f748051f5394d80ba5125f4f8577ff1f483c1f4ac
+  voicecom-prod: ${LIVEKIT_API_SECRET}
 
 room:
   max_participants: 2000
