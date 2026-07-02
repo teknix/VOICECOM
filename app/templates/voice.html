@@ -544,10 +544,34 @@ function appendChatMessage(name, text) {
   strong.textContent = name;
 
   div.appendChild(strong);
-  div.appendChild(document.createTextNode(": " + emojify(text)));
+  div.appendChild(document.createTextNode(": "));
+  appendLinkified(div, emojify(text));
 
   list.appendChild(div);
   list.scrollTop = list.scrollHeight;
+}
+
+// Append text to `el`, turning http(s) URLs into new-tab links. Text nodes +
+// createElement only (no innerHTML), and the regex only matches http/https so
+// no javascript: scheme can sneak in — keeps chat XSS-safe.
+function appendLinkified(el, text) {
+  const re = /https?:\/\/[^\s<]+/g;
+  let last = 0, m;
+  while ((m = re.exec(text)) !== null) {
+    let url = m[0];
+    const trail = url.match(/[.,!?:;)\]]+$/); // don't swallow trailing punctuation
+    if (trail) url = url.slice(0, -trail[0].length);
+    if (m.index > last) el.appendChild(document.createTextNode(text.slice(last, m.index)));
+    const a = document.createElement("a");
+    a.href = url;
+    a.textContent = url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.style.color = "var(--primary)";
+    el.appendChild(a);
+    last = m.index + url.length;
+  }
+  if (last < text.length) el.appendChild(document.createTextNode(text.slice(last)));
 }
 
 // Emoji typeahead — Zulip-style autocomplete when typing :na…
