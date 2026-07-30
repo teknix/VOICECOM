@@ -35,6 +35,13 @@ def create_app():
     # csrf.exempt(recordings_bp)
     csrf.exempt(webhook_bp)
 
+    @app.context_processor
+    def branding():
+        from .config import APP_NAME, ENABLE_SECTORS, ENABLE_MATRIX_AUTH
+        return {"app_name": APP_NAME,
+                "enable_sectors": ENABLE_SECTORS,
+                "matrix_auth": ENABLE_MATRIX_AUTH}
+
     @app.route("/")
     @login_required
     def index():

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VoiceCom — Login</title>
+  <title>{{ app_name }} — Login</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     body { font-family: system-ui, sans-serif; background: #111111; color: #e0e0e0; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
@@ -19,20 +19,24 @@
 </head>
 <body>
   <div class="card">
-    <h1>VoiceCom</h1>
-    <p style="font-size:.8rem;color:#666;margin:-0.5rem 0 1.25rem;">Sign in with your <strong style="color:#888">The Server</strong> account or a local account.</p>
+    <h1>{{ app_name }}</h1>
+    <p style="font-size:.8rem;color:#666;margin:-0.5rem 0 1.25rem;">
+      {% if matrix_auth %}Sign in with your <strong style="color:#888">Matrix ID</strong> (e.g. <code>@you:turbulent.net</code>) or a local account.
+      {% else %}Sign in with your <strong style="color:#888">The Server</strong> account or a local account.{% endif %}
+    </p>
     {% if error %}
     <div class="error">{{ error }}</div>
     {% endif %}
     <form method="POST" action="/auth/login">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-      <label for="username">Username / Email</label>
+      <label for="username">{% if matrix_auth %}Matrix ID{% else %}Username / Email{% endif %}</label>
       <input type="text" id="username" name="username" required autocomplete="username">
 
       <label for="password">Password</label>
       <input type="password" id="password" name="password" required autocomplete="current-password">
 
+      {% if enable_sectors %}
       <label for="sector">Sector</label>
       <select id="sector" name="sector">
         <option value="Sector 01">Sector 01</option>
@@ -52,6 +56,7 @@
         <option value="Sector 15">Sector 15</option>
         <option value="Sector 16">Sector 16</option>
       </select>
+      {% endif %}
 
       <button type="submit">Join</button>
     </form>

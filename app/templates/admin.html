@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token() }}">
-  <title>VoiceCom — Admin</title>
+  <title>{{ app_name }} — Admin</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     :root {
@@ -85,7 +85,7 @@
 </head>
 <body>
   <header>
-    <h1><span>VoiceCom</span> Admin</h1>
+    <h1><span>{{ app_name }}</span> Admin</h1>
     <nav>
       <a href="/">← Voice</a>
       <a href="/auth/logout">Logout</a>

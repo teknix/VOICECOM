@@ -5,8 +5,10 @@ import bcrypt
 from flask import Blueprint, request, session, redirect, render_template
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from .config import SUPER_ADMIN_USERNAME, SUPER_ADMIN_HASH, ENABLE_ZULIP_AUTH
+from .config import (SUPER_ADMIN_USERNAME, SUPER_ADMIN_HASH, ENABLE_ZULIP_AUTH,
+                     ENABLE_MATRIX_AUTH)
 from .zulip import verify_zulip_credentials
+from .matrix import verify_matrix_credentials
 from .models import db
 
 auth_bp = Blueprint("auth", __name__)
@@ -60,6 +62,32 @@ def authenticate(username, password):
                     if ROLE_PRIORITY.get(internal_role, 0) > ROLE_PRIORITY.get(role, 0):
                         role = internal_role
                     break
+
+            return True, {
+                "user_id": profile["user_id"],
+                "display_name": profile["full_name"],
+                "role": role,
+                "avatar_url": profile["avatar_url"]
+            }
+
+    # 2b. Check Matrix (Optional) — '@user:homeserver' + password, verified by that homeserver.
+    # The colon guard keeps plain local usernames off the network path entirely.
+    if ENABLE_MATRIX_AUTH and ":" in username:
+        success, profile = verify_matrix_credentials(username, password)
+        if not success and isinstance(profile, dict):
+            if profile.get("hint") == "mxid_required":
+                return False, {"error": "Sign in with your full Matrix ID, e.g. @you:turbulent.net"}
+            if profile.get("hint") == "homeserver_not_allowed":
+                return False, {"error": f"Logins from '{profile.get('server')}' are not enabled here."}
+        if success:
+            # Matrix's client API exposes no admin flag (that lives behind Synapse's admin
+            # API), so everyone arrives as a member and elevation comes from the internal DB.
+            # Matched on the FULL MXID only — matching the localpart would let
+            # @ingo:evil.example inherit the local 'ingo' account's role.
+            role = "member"
+            internal = db.users.find_one({"username": profile["user_id"]})
+            if internal:
+                role = internal.get("role", "member")
 
             return True, {
                 "user_id": profile["user_id"],
