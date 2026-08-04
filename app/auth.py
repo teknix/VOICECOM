@@ -47,10 +47,14 @@ def authenticate(username, password):
             }
 
     # 2. Check Zulip Proxy (Optional)
+    fallback_error = None
     if ENABLE_ZULIP_AUTH:
         success, profile = verify_zulip_credentials(username, password)
         if not success and isinstance(profile, dict) and profile.get("hint") == "email_required":
-            return False, {"error": "Use your full email address (e.g. you@example.com) to sign in with The Server."}
+            # Zulip rejects non-email usernames, but an internal-DB account may
+            # legitimately have one — so keep going and only show this hint if
+            # nothing else matches. Returning here locked those users out entirely.
+            fallback_error = {"error": "Use your full email address (e.g. you@example.com) to sign in with The Server."}
         if success:
             role = "member"
             if profile.get("is_admin") or profile.get("is_owner"):
@@ -88,7 +92,7 @@ def authenticate(username, password):
             "avatar_url": user.get("avatar_url")
         }
 
-    return False, None
+    return False, fallback_error
 
 
 @auth_bp.route("/auth/login", methods=["GET", "POST"])
