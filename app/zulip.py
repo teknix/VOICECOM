@@ -1,6 +1,9 @@
+import logging
 import os
 import requests
 from requests.auth import HTTPBasicAuth
+
+logger = logging.getLogger(__name__)
 
 ZULIP_URL = os.environ.get("ZULIP_URL", "")
 ZULIP_EMAIL = os.environ.get("ZULIP_EMAIL", "")
@@ -48,6 +51,7 @@ def _profile_from_user(data: dict, fallback_user_id, email: str):
     """
     role = data.get("role")
     return {
+        "zulip_role": role,
         "user_id": str(data.get("user_id", fallback_user_id)),
         "full_name": data.get("full_name", email),
         "avatar_url": data.get("avatar_url"),
@@ -99,11 +103,17 @@ def verify_zulip_credentials(email: str, password: str):
         )
         if resp.status_code == 200:
             return True, _profile_from_user(resp.json(), user_id, email)
-    except Exception:
-        pass
+        logger.warning("zulip users/me for user_id=%s -> HTTP %s; falling back to no privileges",
+                       user_id, resp.status_code)
+    except Exception as e:
+        logger.warning("zulip users/me for user_id=%s failed: %s; falling back to no privileges",
+                       user_id, e)
 
-    # Authenticated but profile fetch failed — return minimal info
+    # Authenticated but profile fetch failed — the user gets in, but with NO role
+    # flags, so an admin/moderator silently lands as a plain member. Logged above
+    # because it is otherwise indistinguishable from genuinely being a member.
     return True, {
+        "zulip_role": None,
         "user_id": str(user_id),
         "full_name": email,
         "avatar_url": None,

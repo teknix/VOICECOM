@@ -1,3 +1,4 @@
+import logging
 import os
 import hmac
 import uuid
@@ -8,6 +9,8 @@ from flask_limiter.util import get_remote_address
 from .config import SUPER_ADMIN_USERNAME, SUPER_ADMIN_HASH, ENABLE_ZULIP_AUTH
 from .zulip import verify_zulip_credentials
 from .models import db
+
+logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint("auth", __name__)
 limiter = Limiter(key_func=get_remote_address, storage_uri=os.environ.get("REDIS_URL", "memory://"))
@@ -74,6 +77,11 @@ def authenticate(username, password):
                     if ROLE_PRIORITY.get(internal_role, 0) > ROLE_PRIORITY.get(role, 0):
                         role = internal_role
                     break
+
+            # Logged because "why is this person only a member?" is otherwise
+            # unanswerable after the fact — the role never lands in the DB.
+            logger.warning("zulip login: user_id=%s zulip_role=%s -> app role %r",
+                           profile["user_id"], profile.get("zulip_role"), role)
 
             return True, {
                 "user_id": profile["user_id"],
