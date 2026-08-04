@@ -97,10 +97,13 @@ def authenticate(username, password):
     if ENABLE_MATRIX_AUTH and ":" in username:
         success, profile = verify_matrix_credentials(username, password)
         if not success and isinstance(profile, dict):
+            # Same rule as the Zulip path above: record the hint but keep going, so an
+            # internal-DB account with this literal username isn't locked out. The hint
+            # is only surfaced if nothing else matches.
             if profile.get("hint") == "mxid_required":
-                return False, {"error": "Sign in with your full Matrix ID, e.g. @you:turbulent.net"}
+                fallback_error = {"error": "Sign in with your full Matrix ID, e.g. @you:turbulent.net"}
             if profile.get("hint") == "homeserver_not_allowed":
-                return False, {"error": f"Logins from '{profile.get('server')}' are not enabled here."}
+                fallback_error = {"error": f"Logins from '{profile.get('server')}' are not enabled here."}
         if success:
             # Matrix's client API exposes no admin flag (that lives behind Synapse's admin
             # API), so everyone arrives as a member and elevation comes from the internal DB.
