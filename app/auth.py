@@ -21,6 +21,16 @@ ROLE_PRIORITY = {
 }
 
 
+def can_join(role, room):
+    """Per-room role gate. `min_role` (absent = open to everyone) is the lowest
+    global role allowed in; unknown values fail closed at admin-only rather than
+    silently opening the room. `locked` stays a separate admin-only override."""
+    min_role = room.get("min_role")
+    if not min_role:
+        return True
+    return ROLE_PRIORITY.get(role, 0) >= ROLE_PRIORITY.get(min_role, 100)
+
+
 def authenticate(username, password):
     """
     Authenticate user via Super Admin bypass, Zulip Proxy, or Internal DB.

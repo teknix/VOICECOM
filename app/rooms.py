@@ -8,7 +8,7 @@ from .middleware import login_required, mod_required
 from .models import db
 from .tokens import issue_token
 from . import lk
-from .auth import ROLE_PRIORITY
+from .auth import ROLE_PRIORITY, can_join
 from .utils import audit_log
 
 rooms_bp = Blueprint("rooms", __name__)
@@ -75,7 +75,8 @@ def change_password():
 @rooms_bp.route("/api/rooms")
 @login_required
 def list_rooms():
-    rooms = list(db.rooms.find({"active": True}))
+    role = session.get("role", "member")
+    rooms = [r for r in db.rooms.find({"active": True}) if can_join(role, r)]
     participant_counts = lk.list_rooms_participants()
     for room in rooms:
         room["_id"] = str(room["_id"])
