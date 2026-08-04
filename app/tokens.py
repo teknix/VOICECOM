@@ -3,6 +3,7 @@ from datetime import timedelta
 from livekit import api
 from .config import LIVEKIT_API_KEY, LIVEKIT_API_SECRET
 from .models import db
+from .auth import can_join
 
 TOKEN_TTL = timedelta(hours=4)
 
@@ -14,6 +15,11 @@ def issue_token(user_id: str, display_name: str, room_id: str, role: str, sector
 
     if room.get("locked") and role != "admin":
         raise ValueError(f"Room {room_id!r} is locked")
+
+    # The real gate: hiding the room from /api/rooms is cosmetic, a token is what
+    # actually opens the LiveKit door.
+    if not can_join(role, room):
+        raise ValueError(f"Room {room_id!r} requires {room['min_role']} rights")
 
     mode = room.get("mode", "discussion")
     presenter_ids = room.get("presenter_ids", [])

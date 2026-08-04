@@ -1,3 +1,4 @@
+import logging
 import os
 import hmac
 import uuid
@@ -11,6 +12,8 @@ from .zulip import verify_zulip_credentials
 from .matrix import verify_matrix_credentials
 from .models import db
 
+logger = logging.getLogger(__name__)
+
 auth_bp = Blueprint("auth", __name__)
 limiter = Limiter(key_func=get_remote_address, storage_uri=os.environ.get("REDIS_URL", "memory://"))
 
@@ -21,6 +24,16 @@ ROLE_PRIORITY = {
     "operator": 25,
     "member": 0
 }
+
+
+def can_join(role, room):
+    """Per-room role gate. `min_role` (absent = open to everyone) is the lowest
+    global role allowed in; unknown values fail closed at admin-only rather than
+    silently opening the room. `locked` stays a separate admin-only override."""
+    min_role = room.get("min_role")
+    if not min_role:
+        return True
+    return ROLE_PRIORITY.get(role, 0) >= ROLE_PRIORITY.get(min_role, 100)
 
 
 def authenticate(username, password):
@@ -39,10 +52,14 @@ def authenticate(username, password):
             }
 
     # 2. Check Zulip Proxy (Optional)
+    fallback_error = None
     if ENABLE_ZULIP_AUTH:
         success, profile = verify_zulip_credentials(username, password)
         if not success and isinstance(profile, dict) and profile.get("hint") == "email_required":
-            return False, {"error": "Use your full email address (e.g. you@example.com) to sign in with The Server."}
+            # Zulip rejects non-email usernames, but an internal-DB account may
+            # legitimately have one — so keep going and only show this hint if
+            # nothing else matches. Returning here locked those users out entirely.
+            fallback_error = {"error": "Use your full email address (e.g. you@example.com) to sign in with The Server."}
         if success:
             role = "member"
             if profile.get("is_admin") or profile.get("is_owner"):
@@ -62,6 +79,11 @@ def authenticate(username, password):
                     if ROLE_PRIORITY.get(internal_role, 0) > ROLE_PRIORITY.get(role, 0):
                         role = internal_role
                     break
+
+            # Logged because "why is this person only a member?" is otherwise
+            # unanswerable after the fact — the role never lands in the DB.
+            logger.warning("zulip login: user_id=%s zulip_role=%s -> app role %r",
+                           profile["user_id"], profile.get("zulip_role"), role)
 
             return True, {
                 "user_id": profile["user_id"],
@@ -106,7 +128,7 @@ def authenticate(username, password):
             "avatar_url": user.get("avatar_url")
         }
 
-    return False, None
+    return False, fallback_error
 
 
 @auth_bp.route("/auth/login", methods=["GET", "POST"])

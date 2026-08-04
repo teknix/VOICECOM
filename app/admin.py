@@ -2,6 +2,7 @@ import requests as http
 from flask import Blueprint, render_template, request, jsonify
 from .middleware import admin_required
 from .models import db
+from .auth import ROLE_PRIORITY
 from .config import LIVEKIT_INTERNAL_URL
 from . import lk
 import bcrypt
@@ -89,9 +90,13 @@ def create_room():
     data = request.get_json(force=True)
     room_id = data.get("room_id", "").strip().lower().replace(" ", "-")
     display_name = data.get("display_name", "").strip()
+    min_role = data.get("min_role", "").strip()
 
     if not all([room_id, display_name]):
         return jsonify({"error": "Missing required fields"}), 400
+
+    if min_role and min_role not in ROLE_PRIORITY:
+        return jsonify({"error": f"min_role must be one of {sorted(ROLE_PRIORITY)}"}), 400
 
     if db.rooms.find_one({"_id": room_id}):
         return jsonify({"error": "Room already exists"}), 409
@@ -102,6 +107,7 @@ def create_room():
         "active": True,
         "mode": "discussion",
         "locked": False,
+        "min_role": min_role,  # "" = open to everyone
         "operator_passphrase": "",
         "operator_ids": [],
         "presenter_ids": []
@@ -123,12 +129,17 @@ def update_room_config(room_id):
     data = request.get_json(force=True)
     oppass = data.get("operator_passphrase", "").strip()
     locked = data.get("locked", False)
-    
+    min_role = data.get("min_role", "").strip()
+
+    if min_role and min_role not in ROLE_PRIORITY:
+        return jsonify({"error": f"min_role must be one of {sorted(ROLE_PRIORITY)}"}), 400
+
     db.rooms.update_one(
         {"_id": room_id},
         {"$set": {
             "operator_passphrase": oppass,
-            "locked": locked
+            "locked": locked,
+            "min_role": min_role
         }}
     )
     
