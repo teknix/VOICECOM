@@ -32,6 +32,31 @@ def send_to_zulip(stream: str, topic: str, content: str):
         return False
 
 
+ZULIP_ROLE_OWNER = 100
+ZULIP_ROLE_ADMIN = 200
+ZULIP_ROLE_MODERATOR = 300
+
+
+def _profile_from_user(data: dict, fallback_user_id, email: str):
+    """Map a Zulip user object onto the profile shape the app expects.
+
+    Moderator MUST come from the integer `role` — Zulip's user object has
+    is_admin/is_owner/is_guest but NO `is_moderator` field, so reading one only
+    ever yielded False and every Zulip moderator arrived here as a plain member.
+    The booleans are still honoured for admin/owner (they do exist), and `role`
+    is checked too so a server that ever drops them still resolves correctly.
+    """
+    role = data.get("role")
+    return {
+        "user_id": str(data.get("user_id", fallback_user_id)),
+        "full_name": data.get("full_name", email),
+        "avatar_url": data.get("avatar_url"),
+        "is_admin": bool(data.get("is_admin", False)) or role == ZULIP_ROLE_ADMIN,
+        "is_owner": bool(data.get("is_owner", False)) or role == ZULIP_ROLE_OWNER,
+        "is_moderator": bool(data.get("is_moderator", False)) or role == ZULIP_ROLE_MODERATOR,
+    }
+
+
 def verify_zulip_credentials(email: str, password: str):
     """
     Verify email/password against Zulip and return profile info.
@@ -73,15 +98,7 @@ def verify_zulip_credentials(email: str, password: str):
             timeout=5
         )
         if resp.status_code == 200:
-            data = resp.json()
-            return True, {
-                "user_id": str(data.get("user_id", user_id)),
-                "full_name": data.get("full_name", email),
-                "avatar_url": data.get("avatar_url"),
-                "is_admin": data.get("is_admin", False),
-                "is_owner": data.get("is_owner", False),
-                "is_moderator": data.get("is_moderator", False),
-            }
+            return True, _profile_from_user(resp.json(), user_id, email)
     except Exception:
         pass
 
