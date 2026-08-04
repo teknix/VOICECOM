@@ -22,6 +22,15 @@ def _split_mxid(login: str):
     return f"@{localpart}:{server.lower()}", server.lower()
 
 
+def is_mxid(login: str) -> bool:
+    """True if this login is Matrix-ID-shaped rather than a plain local username.
+
+    Public so auth.py can ask the question without growing a second parser that could
+    disagree with the one federated login actually uses.
+    """
+    return _split_mxid(login)[0] is not None
+
+
 def _is_safe_url(url: str) -> bool:
     """Reject non-HTTPS and anything resolving to a non-public address.
 

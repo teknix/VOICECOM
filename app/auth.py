@@ -9,7 +9,7 @@ from flask_limiter.util import get_remote_address
 from .config import (SUPER_ADMIN_USERNAME, SUPER_ADMIN_HASH, ENABLE_ZULIP_AUTH,
                      ENABLE_MATRIX_AUTH)
 from .zulip import verify_zulip_credentials
-from .matrix import verify_matrix_credentials
+from .matrix import verify_matrix_credentials, is_mxid
 from .models import db
 
 logger = logging.getLogger(__name__)
@@ -122,6 +122,15 @@ def authenticate(username, password):
             }
 
     # 3. Check Internal DB
+    # With Matrix auth on, an MXID-shaped record exists only to carry a ROLE for a
+    # federated user — it is not a local account. Accepting a password for it turns
+    # every role grant into a backdoor: the admin "Add User" form requires a password,
+    # so '@user:server' + that password logged in with the record's role and no Matrix
+    # account whatsoever (confirmed by live test before this guard existed).
+    # Inert when ENABLE_MATRIX_AUTH is off, so deployments using Zulip are unaffected.
+    if ENABLE_MATRIX_AUTH and is_mxid(username):
+        return False, fallback_error
+
     user = db.users.find_one({"username": username})
     if user and bcrypt.checkpw(password.encode('utf-8'), user["password_hash"].encode('utf-8')):
         return True, {

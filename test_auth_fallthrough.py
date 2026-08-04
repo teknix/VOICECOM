@@ -64,6 +64,25 @@ def test_hint_still_shown_when_nothing_matches():
     assert "full email address" in info["error"]
 
 
+def test_mxid_guard_is_inert_when_matrix_auth_is_off():
+    """Protects lake. The MXID role-only guard is gated on ENABLE_MATRIX_AUTH, so a
+    deployment on Zulip must still accept a colon/MXID-shaped internal account as an
+    ordinary password login, exactly as before that guard existed."""
+    LOCAL_USERS["@odd:name.example"] = {
+        "_id": "def456",
+        "username": "@odd:name.example",
+        "display_name": "Odd Local",
+        "role": "moderator",
+        "password_hash": bcrypt.hashpw(PW.encode(), bcrypt.gensalt()).decode(),
+    }
+    try:
+        ok, info = auth.authenticate("@odd:name.example", PW)
+        assert ok, "with Matrix auth off, an MXID-shaped local account must still log in"
+        assert info["role"] == "moderator"
+    finally:
+        del LOCAL_USERS["@odd:name.example"]
+
+
 def test_zulip_path_unchanged():
     ok, info = auth.authenticate("zuser@example.com", PW)
     assert ok and info["role"] == "moderator" and info["user_id"] == "z1"
@@ -74,5 +93,6 @@ def test_zulip_path_unchanged():
 if __name__ == "__main__":
     test_internal_user_with_plain_username_can_log_in()
     test_hint_still_shown_when_nothing_matches()
+    test_mxid_guard_is_inert_when_matrix_auth_is_off()
     test_zulip_path_unchanged()
-    print("OK — 3/3")
+    print("OK — 4/4")

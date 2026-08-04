@@ -1,10 +1,12 @@
 """Self-check for the Matrix -> internal-DB fallthrough and role matching.
 Run: python3 test_matrix_fallthrough.py
 
-Two regression guards:
- 1. Same rule the Zulip path learned the hard way — a rejection hint must not return
-    early, or an internal-DB account with that literal username is locked out.
- 2. Matrix role elevation matches the FULL MXID only. Matching the localpart would let
+Three regression guards:
+ 1. An MXID-shaped internal record is a ROLE CARRIER, never a password login — otherwise
+    every role grant is a way in with no Matrix account (this was live once, and tested).
+ 2. Same rule the Zulip path learned the hard way — a rejection hint must not return
+    early, or an internal-DB account with a non-MXID username is locked out.
+ 3. Matrix role elevation matches the FULL MXID only. Matching the localpart would let
     @ingo:evil.example inherit the local 'ingo' account's role.
 
 Matrix and mongo are both faked — no network, no DB.
@@ -48,16 +50,41 @@ auth.db = FakeDB()
 auth.verify_matrix_credentials = fake_matrix
 
 
-def test_local_account_with_colon_not_locked_out():
-    """A disallowed-homeserver hint must not shadow a real local account."""
+def test_mxid_record_is_role_only_never_a_password_login():
+    """THE BACKDOOR GUARD. An MXID-shaped record carries a role for a federated user;
+    it must never be usable as a local password login, or every role grant becomes a
+    way in without any Matrix account. Verified live before the guard existed."""
     LOCAL_USERS.clear()
+    LOCAL_USERS["@rolegrant:turbulent.net"] = {
+        "_id": "x1", "username": "@rolegrant:turbulent.net", "display_name": "Role Grant",
+        "role": "admin",
+        "password_hash": bcrypt.hashpw(PW.encode(), bcrypt.gensalt()).decode(),
+    }
+    # Correct local password, and Matrix would reject this user — must NOT log in.
+    ok, info = auth.authenticate("@rolegrant:turbulent.net", PW)
+    assert not ok, "MXID-shaped record must not accept a local password"
+
+    # Same for an MXID on a homeserver that isn't even allowlisted.
     LOCAL_USERS["@svc:other.example"] = {
-        "_id": "x1", "username": "@svc:other.example", "display_name": "Service",
+        "_id": "x9", "username": "@svc:other.example", "display_name": "Service",
         "role": "moderator",
         "password_hash": bcrypt.hashpw(PW.encode(), bcrypt.gensalt()).decode(),
     }
     ok, info = auth.authenticate("@svc:other.example", PW)
-    assert ok, "internal-DB account must survive the homeserver_not_allowed hint"
+    assert not ok, "disallowed-homeserver MXID must not fall back to a local password"
+
+
+def test_non_mxid_local_account_still_falls_through():
+    """The fallthrough main fixed for Zulip still holds for anything NOT MXID-shaped.
+    'foo:' has a colon (so it reaches the Matrix path and trips mxid_required) but is
+    not a valid MXID, so it must still reach the internal DB and log in."""
+    LOCAL_USERS.clear()
+    LOCAL_USERS["foo:"] = {
+        "_id": "x5", "username": "foo:", "display_name": "Odd Name", "role": "moderator",
+        "password_hash": bcrypt.hashpw(PW.encode(), bcrypt.gensalt()).decode(),
+    }
+    ok, info = auth.authenticate("foo:", PW)
+    assert ok, "non-MXID username must still fall through to the internal DB"
     assert info["role"] == "moderator"
 
 
@@ -91,7 +118,8 @@ def test_role_matches_full_mxid_only():
 
 
 if __name__ == "__main__":
-    test_local_account_with_colon_not_locked_out()
+    test_mxid_record_is_role_only_never_a_password_login()
+    test_non_mxid_local_account_still_falls_through()
     test_hint_still_shown_when_nothing_matches()
     test_role_matches_full_mxid_only()
-    print("OK — 3/3")
+    print("OK — 4/4")
