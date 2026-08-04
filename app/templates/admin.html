@@ -129,11 +129,17 @@
             <td class="mono">{{ room._id }}</td>
             <td>{{ room.display_name }}</td>
             <td>{% if room.mode == 'broadcast' %}<span class="badge broadcast">broadcast</span>{% else %}<span class="badge">{{ room.mode }}</span>{% endif %}</td>
-            <td>{{ '🔒 Locked' if room.locked else '🔓 Open' }}</td>
+            <td>
+              {% if room.locked %}🔒 Locked
+              {% elif room.min_role == 'admin' %}👑 Admins only
+              {% elif room.min_role == 'moderator' %}🛡️ Mods &amp; Admins
+              {% elif room.min_role == 'operator' %}🎛️ Operators &amp; up
+              {% else %}🔓 Open{% endif %}
+            </td>
             <td>{{ room.participant_count }}</td>
             <td>
               <div class="row-actions">
-                <button class="btn" onclick='openModal("{{ room._id }}", "{{ room.display_name }}", {{ "true" if room.locked else "false" }})'>⚙️ Manage</button>
+                <button class="btn" onclick='openModal("{{ room._id }}", "{{ room.display_name }}", {{ "true" if room.locked else "false" }}, "{{ room.min_role or "" }}")'>⚙️ Manage</button>
                 <button class="btn danger" onclick='deleteRoom("{{ room._id }}")'>Delete</button>
               </div>
             </td>
@@ -229,6 +235,15 @@
       <label>Operator Passphrase</label>
       <input type="password" id="room-oppass" placeholder="Leave empty to disable">
     </div>
+    <div class="input-group">
+      <label>Who can join</label>
+      <select id="room-min-role">
+        <option value="">Everyone</option>
+        <option value="operator">Operators, mods &amp; admins</option>
+        <option value="moderator">Moderators &amp; admins only</option>
+        <option value="admin">Admins only</option>
+      </select>
+    </div>
     <div class="input-group" style="display:flex; align-items:center; gap:.5rem;">
       <input type="checkbox" id="room-locked" style="width:auto; margin-bottom:0">
       <label style="margin-bottom:0">Locked (Only Admins can join)</label>
@@ -251,6 +266,15 @@
     <div class="input-group">
       <label>Display Name</label>
       <input type="text" id="new-room-name" placeholder="e.g. Ops Channel" required>
+    </div>
+    <div class="input-group">
+      <label>Who can join</label>
+      <select id="new-room-min-role">
+        <option value="">Everyone</option>
+        <option value="operator">Operators, mods &amp; admins</option>
+        <option value="moderator">Moderators &amp; admins only</option>
+        <option value="admin">Admins only</option>
+      </select>
     </div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeCreateRoomModal()">Cancel</button>
@@ -295,6 +319,7 @@
     const backdrop = document.getElementById('backdrop');
     const oppassInput = document.getElementById('room-oppass');
     const lockedInput = document.getElementById('room-locked');
+    const minRoleInput = document.getElementById('room-min-role');
 
     function showBackdrop(on) { backdrop.style.display = on ? 'block' : 'none'; }
     function closeAllModals() { closeModal(); closeUserModal(); closeCreateRoomModal(); }
@@ -330,11 +355,12 @@
     applyFormatting();
 
     // ---- Room Management ----
-    function openModal(id, name, locked) {
+    function openModal(id, name, locked, minRole) {
       currentRoomId = id;
       document.getElementById('modal-title').textContent = `Manage: ${name}`;
       oppassInput.value = '';
       lockedInput.checked = locked;
+      minRoleInput.value = minRole || '';
       roomModal.style.display = 'block'; showBackdrop(true);
     }
     function closeModal() { roomModal.style.display = 'none'; showBackdrop(false); currentRoomId = null; }
@@ -344,7 +370,7 @@
       const resp = await fetch(`/api/admin/rooms/${currentRoomId}/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
-        body: JSON.stringify({ operator_passphrase: oppassInput.value, locked: lockedInput.checked })
+        body: JSON.stringify({ operator_passphrase: oppassInput.value, locked: lockedInput.checked, min_role: minRoleInput.value })
       });
       if (resp.ok) location.reload();
       else alert(`Error: ${(await resp.json()).error}`);
@@ -387,6 +413,7 @@
     function openCreateRoomModal() {
       document.getElementById('new-room-id').value = '';
       document.getElementById('new-room-name').value = '';
+      document.getElementById('new-room-min-role').value = '';
       createRoomModal.style.display = 'block'; showBackdrop(true);
     }
     function closeCreateRoomModal() { createRoomModal.style.display = 'none'; showBackdrop(false); }
@@ -394,11 +421,12 @@
     async function createRoom() {
       const room_id = document.getElementById('new-room-id').value.trim();
       const display_name = document.getElementById('new-room-name').value.trim();
+      const min_role = document.getElementById('new-room-min-role').value;
       if (!room_id || !display_name) { alert('Both fields are required.'); return; }
       const resp = await fetch('/api/admin/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
-        body: JSON.stringify({ room_id, display_name })
+        body: JSON.stringify({ room_id, display_name, min_role })
       });
       if (resp.ok) location.reload();
       else alert(`Error: ${(await resp.json()).error}`);

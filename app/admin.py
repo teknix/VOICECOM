@@ -129,12 +129,17 @@ def update_room_config(room_id):
     data = request.get_json(force=True)
     oppass = data.get("operator_passphrase", "").strip()
     locked = data.get("locked", False)
-    
+    min_role = data.get("min_role", "").strip()
+
+    if min_role and min_role not in ROLE_PRIORITY:
+        return jsonify({"error": f"min_role must be one of {sorted(ROLE_PRIORITY)}"}), 400
+
     db.rooms.update_one(
         {"_id": room_id},
         {"$set": {
             "operator_passphrase": oppass,
-            "locked": locked
+            "locked": locked,
+            "min_role": min_role
         }}
     )
     
