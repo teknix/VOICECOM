@@ -1,6 +1,6 @@
 import os
 from flask import Flask, render_template
-from flask_wtf.csrf import CSRFProtect
+from flask_wtf.csrf import CSRFProtect, CSRFError
 from .middleware import login_required
 
 csrf = CSRFProtect()
@@ -34,6 +34,26 @@ def create_app():
     # csrf.exempt(rooms_bp)
     # csrf.exempt(recordings_bp)
     csrf.exempt(webhook_bp)
+
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(e):
+        """Recover the login form instead of dead-ending on a raw 400.
+
+        A successful login calls session.clear() (auth.py), which drops
+        Flask-WTF's csrf_token along with everything else. A login form that
+        was not freshly fetched — back button, bfcache, restored tab — then
+        posts a token against a session that has none, and Flask-WTF raises
+        "The CSRF session token is missing." Re-rendering login.html mints a
+        fresh token into the session, so the next submit works.
+        """
+        from flask import request, redirect, session
+        if request.path == "/auth/login":
+            if session.get("user_id"):
+                return redirect("/")
+            return render_template(
+                "login.html",
+                error="Your session expired. Please sign in again."), 400
+        return e.get_response()
 
     @app.context_processor
     def branding():
