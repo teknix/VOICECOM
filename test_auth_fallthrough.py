@@ -7,6 +7,11 @@ Zulip and mongo are both faked — no network, no DB.
 import os
 
 os.environ["ENABLE_ZULIP_AUTH"] = "true"
+# Pin BOTH flags: app.config reads them at import time, so anything left unset is
+# inherited from the host .env. On haven (ENABLE_MATRIX_AUTH=true) that silently
+# flipped test_mxid_guard_is_inert_when_matrix_auth_is_off into asserting the
+# opposite of its own name.
+os.environ["ENABLE_MATRIX_AUTH"] = "false"
 
 import bcrypt
 from app import auth
