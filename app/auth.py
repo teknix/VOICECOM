@@ -11,6 +11,7 @@ from .config import (SUPER_ADMIN_USERNAME, SUPER_ADMIN_HASH, ENABLE_ZULIP_AUTH,
 from .zulip import verify_zulip_credentials
 from .matrix import verify_matrix_credentials, is_mxid
 from .models import db
+from .avatars import prefetch as prefetch_avatar
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +160,7 @@ def login():
             session["role"] = user_info["role"]
             session["avatar_url"] = user_info["avatar_url"]
             session["sector"] = sector
+            prefetch_avatar(user_info["avatar_url"])
             return redirect("/")
 
         error = "Invalid username or password."

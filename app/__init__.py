@@ -77,9 +77,22 @@ def create_app():
                                me=user)
 
     @app.route("/user_avatars/<path:filename>")
+    @login_required
     def user_avatars(filename):
-        # Absorb Zulip-style avatar requests (relative URLs stored in participant metadata)
-        return "", 204
+        # Zulip-relative avatar URLs from participant metadata, served from the
+        # local store. The name is a content hash, so a hit can be cached forever;
+        # a miss is cached briefly so re-renders don't re-request it.
+        from flask import Response
+        from .avatars import get_avatar
+        got = get_avatar(filename)
+        if got is None:
+            resp = Response(status=404)
+            resp.headers["Cache-Control"] = "private, max-age=600"
+            return resp
+        data, ctype = got
+        resp = Response(data, mimetype=ctype)
+        resp.headers["Cache-Control"] = "private, max-age=31536000, immutable"
+        return resp
 
     try:
         import os as _o

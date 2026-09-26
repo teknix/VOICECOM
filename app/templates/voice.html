@@ -102,6 +102,9 @@
     .floor-item { display: flex; align-items: center; gap: .6rem; padding: .4rem .6rem; border-radius: 4px; font-size: .9rem; position: absolute; left: 0; right: 0; height: 40px; }
     .floor-item.speaking { background: rgba(76, 201, 240, .12); }
     .floor-item .avatar { width: 24px; height: 24px; border-radius: 50%; background: var(--muted); background-size: cover; background-position: center; line-height: 24px; text-align: center; font-weight: bold; font-size: 0.7rem; }
+    /* Photo sits over the initial; if it fails to load it is removed and the initial shows. */
+    .avatar { position: relative; overflow: hidden; flex-shrink: 0; }
+    .avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
     .floor-item .name { flex: 1; }
     .floor-item .role-badge { font-size: .7rem; padding: .15rem .4rem; border-radius: 3px; background: var(--surface); border: 1px solid var(--border); }
     .floor-item .role-badge.admin { background: #7209b7; color: white; }
@@ -712,32 +715,52 @@ function updateParticipantsList() {
   document.getElementById("floor").style.height = (floorItems.length * currentItemHeight) + "px";
 }
 
+// Avatar URLs that failed to load this page-life; never re-requested.
+const failedAvatars = new Set();
+
+function buildAvatar(avatarUrl, initial) {
+  const avatarDiv = document.createElement("div");
+  avatarDiv.className = "avatar";
+  avatarDiv.textContent = initial;
+  if (avatarUrl && !failedAvatars.has(avatarUrl)) {
+    const img = document.createElement("img");
+    img.alt = "";
+    img.onerror = () => { failedAvatars.add(avatarUrl); img.remove(); };
+    img.src = avatarUrl;
+    avatarDiv.appendChild(img);
+  }
+  return avatarDiv;
+}
+
 function renderStage() {
   const stage = document.getElementById("stage");
-  stage.innerHTML = "";
-  
+
   // Stage shows active speakers (max 10)
   const speakers = allParticipants
     .filter(p => activeSpeakerIdentities.has(p.identity))
     .slice(0, 10);
-    
-  speakers.forEach(p => {
+
+  // ActiveSpeakersChanged fires several times a second in a busy room. Reuse the
+  // existing card for anyone still speaking (keyed on everything it displays) so
+  // a speaker change doesn't rebuild every card and re-request every avatar.
+  const existing = new Map([...stage.children].map(el => [el.dataset.key, el]));
+  const cards = speakers.map(p => {
+    const key = [p.identity, p.name, p.metadata].join("\u0000");
+    return existing.get(key) || buildStageItem(p, key);
+  });
+  stage.replaceChildren(...cards);
+}
+
+function buildStageItem(p, key) {
     const el = document.createElement("div");
     el.className = "stage-item speaking";
+    el.dataset.key = key;
     const initial = (p.name || p.identity).charAt(0).toUpperCase();
 
     let metaObj = {};
     try { metaObj = JSON.parse(p.metadata || "{}"); } catch(e) {}
-    const avatarUrl = metaObj.avatar_url;
 
-    const avatarDiv = document.createElement("div");
-    avatarDiv.className = "avatar";
-    if (avatarUrl) {
-      avatarDiv.style.backgroundImage = `url('${avatarUrl}')`;
-      avatarDiv.style.color = "transparent";
-    } else {
-      avatarDiv.textContent = initial;
-    }
+    const avatarDiv = buildAvatar(metaObj.avatar_url, initial);
 
     const nameDiv = document.createElement("div");
     nameDiv.style.cssText = "font-weight:600;font-size:.9rem;";
@@ -750,8 +773,7 @@ function renderStage() {
     el.appendChild(avatarDiv);
     el.appendChild(nameDiv);
     el.appendChild(roleDiv);
-    stage.appendChild(el);
-  });
+    return el;
 }
 
 function updateFloorSpeaking() {
@@ -804,15 +826,8 @@ function renderFloor() {
       nameSpan.className = "name";
       nameSpan.textContent = (p.name || p.identity) + (isLocal ? " (you)" : "");
 
-      const avatarDiv = document.createElement("div");
-      avatarDiv.className = "avatar";
       const initial = (p.name || p.identity).charAt(0).toUpperCase();
-      if (metaObj.avatar_url) {
-        avatarDiv.style.backgroundImage = `url('${metaObj.avatar_url}')`;
-        avatarDiv.style.color = "transparent";
-      } else {
-        avatarDiv.textContent = initial;
-      }
+      const avatarDiv = buildAvatar(metaObj.avatar_url, initial);
 
       const qualityDot = document.createElement("span");
       qualityDot.className = "quality-dot";
