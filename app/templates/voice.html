@@ -400,6 +400,7 @@ async function joinRoom(roomId, displayName, mode) {
   document.getElementById("mic-btn").disabled = false;
   updateModeUI(mode);
   setStatus("Connected to " + displayName);
+  keepScreenOn();
 
   // No background global-announcement join — it caused general's audio to mirror
   // in for presenters. God Mic connects to it on demand instead (see ensureGlobalRoom).
@@ -923,7 +924,29 @@ function showHandRaise(msg) {
   setTimeout(() => { toast.style.display = "none"; }, 5000);
 }
 
+// Keep a phone's screen on while it's in a room. Lab-tested 2026-10-19 on Firefox for
+// Android: with the screen on the call stayed up untouched; once the screen is off or
+// the app is switched, the browser freezes the page and the call drops in ~15-40 s.
+// Touch devices only, so desktops idling in a room can still sleep.
+let wakeLock = null;
+async function keepScreenOn() {
+  if (wakeLock || !currentRoom || !("wakeLock" in navigator)) return;
+  if (!matchMedia("(pointer: coarse)").matches || document.visibilityState !== "visible") return;
+  try {
+    wakeLock = await navigator.wakeLock.request("screen");
+    wakeLock.addEventListener("release", () => { wakeLock = null; });
+  } catch (e) { /* refused (battery saver, permissions): the call still works */ }
+}
+function allowScreenOff() {
+  if (wakeLock) { wakeLock.release(); wakeLock = null; }
+}
+// The browser drops the lock whenever the page is hidden; take it back on return.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") keepScreenOn();
+});
+
 async function leaveRoom() {
+  allowScreenOff();
   stopClientRecording(); // upload before the room's tracks go away
   // Stop all audio immediately before async disconnects to prevent bleed
   document.querySelectorAll("#audio-container audio").forEach(el => {
