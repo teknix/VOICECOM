@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <meta name="robots" content="noindex">
+  <title>Lab · {{ app_name }}</title>
+  <style>
+    :root { color-scheme: dark; --bg: #111; --surface: #1c1c1f; --border: #333; --text: #eee; --muted: #a3a3a8;
+            --primary: #6c8cff; --ok: #4ade80; --bad: #f87171; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 system-ui, sans-serif; }
+    main { max-width: 640px; margin: 0 auto; padding: 16px; }
+    h1 { font-size: 1.3rem; margin: 4px 0 2px; }
+    h2 { font-size: 1rem; margin: 22px 0 8px; color: var(--muted); font-weight: 600; }
+    p { margin: 6px 0; }
+    .muted { color: var(--muted); font-size: 0.9rem; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    button, input[type=text] { font: inherit; min-height: 44px; border-radius: 8px; }
+    button { padding: 0 16px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+    button.primary { background: var(--primary); border-color: var(--primary); color: #0b0b0d; font-weight: 600; }
+    button:disabled { opacity: 0.45; cursor: default; }
+    input[type=text] { padding: 0 12px; border: 1px solid #555; background: #18181b; color: var(--text); width: 12em; }
+    label.opt { display: flex; gap: 10px; align-items: center; min-height: 44px; padding: 4px 0; }
+    label.opt input { flex: 0 0 22px; width: 22px; height: 22px; accent-color: var(--primary); }
+    :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+    #status { font-weight: 600; }
+    .ok { color: var(--ok); } .bad { color: var(--bad); }
+    #people { margin: 6px 0; padding-left: 18px; }
+    #log { background: #0b0b0d; border: 1px solid var(--border); border-radius: 8px; padding: 10px; height: 46vh; overflow: auto;
+           font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; word-break: break-word; }
+    #pip-canvas, #keepawake { display: none; }
+    #pip-video { width: 160px; height: 90px; border: 1px solid var(--border); border-radius: 6px; background: #000; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Phone lab</h1>
+  <p class="muted">Does the call keep going when you switch apps or the screen turns off? Join from your phone and from a computer,
+    start the beep on the computer, then switch apps or lock the phone. Come back and read the log.</p>
+
+  <h2>1 · Join</h2>
+  <div class="row">
+    <input type="text" id="device" placeholder="This device, e.g. phone" maxlength="24" aria-label="Device name">
+    <button class="primary" id="join">Join the lab room</button>
+    <button id="leave" disabled>Leave</button>
+  </div>
+  <p>Status: <span id="status">not connected</span></p>
+  <p class="muted">In the room:</p>
+  <ul id="people"><li class="muted">nobody yet</li></ul>
+  <div class="row">
+    <button id="mic" disabled>Mute my mic</button>
+    <button id="tone" disabled>Start beep (from this device)</button>
+  </div>
+
+  <h2>2 · Keep-alive options (try with and without)</h2>
+  <label class="opt"><input type="checkbox" id="opt-wakelock"> Keep the screen on (Wake Lock)</label>
+  <label class="opt"><input type="checkbox" id="opt-video"> Keep-awake video (fallback when Wake Lock doesn't work)</label>
+  <label class="opt"><input type="checkbox" id="opt-media"> Phone media controls (Media Session: lock-screen controls, hang up)</label>
+  <label class="opt"><input type="checkbox" id="opt-autopip"> Auto picture-in-picture when leaving the app (Chrome only)</label>
+  <div class="row">
+    <button id="pip" disabled>Open picture-in-picture</button>
+    <video id="pip-video" muted playsinline aria-label="Picture-in-picture preview"></video>
+  </div>
+  <p class="muted">Changes apply right away. Each run notes which options were on.</p>
+
+  <h2>3 · Log</h2>
+  <div class="row">
+    <button id="send">Save log to server</button>
+    <button id="copy">Copy log</button>
+    <button id="clear">Start a new run</button>
+  </div>
+  <p class="muted" id="send-msg" role="status"></p>
+  <div id="log" aria-live="off"></div>
+
+  <canvas id="pip-canvas" width="320" height="180"></canvas>
+  <video id="keepawake" muted loop playsinline></video>
+</main>
+<script>
+  const LIVEKIT_WS_URL = "{{ livekit_url }}";
+  const ME = {{ me | tojson }};
+</script>
+<script src="{{ url_for('static', filename='livekit-client.umd.min.js') }}"></script>
+<script src="{{ url_for('static', filename='lab.js') }}"></script>
+</body>
+</html>

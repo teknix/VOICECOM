@@ -23,12 +23,14 @@ def create_app():
     from .recordings import recordings_bp
     from .webhook import webhook_bp
     from .admin import admin_bp
+    from .lab import lab_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(rooms_bp)
     app.register_blueprint(recordings_bp)
     app.register_blueprint(webhook_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(lab_bp)
 
     # Exempt JSON API and webhook routes from CSRF — authenticated by session
     # csrf.exempt(rooms_bp)
