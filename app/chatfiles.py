@@ -1,6 +1,11 @@
 """Files shared in channel chat: the paperclip uploads one file, chat gets its link.
 
-A file lives for FILE_TTL (4 hours). After that the link answers "expired" and the
+Signed in with Zulip: the file goes to Zulip as that user, in a group DM to everyone
+in the VoiceCom channel at that moment (owner 2026-10-19). Zulip only lets people who
+can see a message open its file, so this keeps it private to them, with no time limit.
+Anyone else (internal accounts), or if Zulip refuses the file: the VoiceCom copy below.
+
+A VoiceCom copy lives for FILE_TTL (4 hours). After that the link answers "expired" and the
 file is deleted from disk — by a sweep on every upload/download plus a background
 loop, so nothing outlives its window by more than a few minutes.
 """
@@ -9,14 +14,19 @@ import mimetypes
 import os
 import re
 import secrets
+import json
 import threading
 import time
 from datetime import timedelta
 
+import requests
 from flask import Blueprint, jsonify, render_template, request, send_file, session
+from requests.auth import HTTPBasicAuth
 
 from .middleware import login_required
 from .models import db
+from . import zulipkeys
+from .lk import list_participants
 from .utils import audit_log, now_utc
 
 chatfiles_bp = Blueprint("chatfiles", __name__)
@@ -63,15 +73,63 @@ def start_sweeper(interval=300):
             time.sleep(interval)
             try:
                 purge_expired()
+                zulipkeys.purge_stale()
             except Exception:
                 logger.exception("chat file sweep failed")
     threading.Thread(target=loop, daemon=True, name="chat-file-sweeper").start()
 
 
+ZULIP_URL = os.environ.get("ZULIP_URL", "").rstrip("/")
+
+
+def channel_zulip_ids(room_id, me):
+    """Zulip user ids of everyone in the channel right now (Zulip users' identities are their ids)."""
+    ids = {int(me)} if str(me).isdigit() else set()
+    try:
+        for p in list_participants(room_id):
+            if p.identity.isdigit():
+                ids.add(int(p.identity))
+    except Exception as e:
+        logger.warning("chat file: participant list for %s failed: %s", room_id, e)
+    return sorted(ids)
+
+
+def share_on_zulip(path, name, room, auth):
+    """Upload as the user and DM it to the channel. Returns the file's Zulip URL, or None."""
+    if not ZULIP_URL:
+        return None
+    email, key = auth
+    try:
+        with open(path, "rb") as fh:
+            up = requests.post(f"{ZULIP_URL}/api/v1/user_uploads", files={"file": (name, fh)},
+                               auth=HTTPBasicAuth(email, key), timeout=(5, 600))
+        data = up.json() if up.headers.get("Content-Type", "").startswith("application/json") else {}
+        rel = data.get("url") or data.get("uri")
+        if up.status_code != 200 or not rel:
+            logger.warning("chat file: Zulip upload refused (HTTP %s): %s", up.status_code, data.get("msg"))
+            return None
+        to = channel_zulip_ids(room["_id"], session["user_id"])
+        if not to:
+            return None
+        msg = requests.post(f"{ZULIP_URL}/api/v1/messages", auth=HTTPBasicAuth(email, key), timeout=10, data={
+            "type": "direct",
+            "to": json.dumps(to),
+            "content": f"📎 [{name}]({rel}) shared in the VoiceCom channel **{room.get('display_name', room['_id'])}**",
+        })
+        if msg.status_code != 200:
+            logger.warning("chat file: Zulip DM refused (HTTP %s)", msg.status_code)
+            return None
+        return ZULIP_URL + rel
+    except requests.RequestException as e:
+        logger.warning("chat file: Zulip unreachable: %s", e)
+        return None
+
+
 @chatfiles_bp.route("/api/rooms/<room_id>/files", methods=["POST"])
 @login_required
 def upload_file(room_id):
-    if not db.rooms.find_one({"_id": room_id}):
+    room = db.rooms.find_one({"_id": room_id})
+    if not room:
         return jsonify({"error": "Channel not found"}), 404
     if request.content_length and request.content_length > MAX_FILE_BYTES + 1024 * 1024:
         return jsonify({"error": "That file is over 200 MB."}), 413
@@ -90,6 +148,13 @@ def upload_file(room_id):
         return jsonify({"error": "That file is empty." if size == 0 else "That file is over 200 MB."}), 413
 
     name = safe_name(f.filename)
+    auth = zulipkeys.current()
+    zulip_url = share_on_zulip(path, name, room, auth) if auth else None
+    if zulip_url:
+        os.remove(path)
+        audit_log(room_id, "chat_file_shared", session["user_id"], {"file": name, "size": size, "where": "zulip"})
+        return jsonify({"name": name, "size": size, "url": zulip_url, "zulip": True}), 201
+
     created = now_utc()
     doc = {
         "_id": file_id,
@@ -110,6 +175,7 @@ def upload_file(room_id):
         "size": size,
         "url": f"/files/{file_id}/{name}",
         "expires_at": doc["expires_at"].isoformat(),
+        "zulip_fallback": bool(auth),  # was meant for Zulip but Zulip refused or was unreachable
     }), 201
 
 

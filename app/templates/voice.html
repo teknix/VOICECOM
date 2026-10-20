@@ -257,7 +257,7 @@
 <div id="file-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="file-modal-title">
   <div class="file-modal-card">
     <h3 id="file-modal-title">Share a file</h3>
-    <p class="file-modal-note">Everyone in this channel gets a link. Files are kept for 4 hours, up to 200 MB.</p>
+    <p class="file-modal-note" id="file-modal-note">Everyone in this channel gets a link. Files are kept for 4 hours, up to 200 MB.</p>
     <input type="file" id="file-input" hidden>
     <button class="btn" id="file-choose" type="button">Choose a file</button>
     <div id="file-chosen" class="file-chosen"></div>
@@ -643,6 +643,11 @@ function fileCard(file) {
   t.textContent = "📎 " + file.name;
   const s = document.createElement("div");
   s.className = "s";
+  if (file.zulip) {
+    s.textContent = formatBytes(file.size) + " · on Zulip (sent to everyone here)";
+    a.append(t, s);
+    return a;
+  }
   const until = new Date(file.expires_at);
   const left = until - Date.now();
   const expire = () => { a.classList.add("expired"); s.textContent = formatBytes(file.size) + " · expired"; };
@@ -839,7 +844,11 @@ document.getElementById("chat-send").addEventListener("click", sendChat);
   const close = () => { if (xhr) xhr.abort(); xhr = null; modal.classList.add("hidden"); reset(); };
   document.getElementById("attach-btn").addEventListener("click", () => {
     if (!lkRoom || !currentRoom) { setStatus("Join a channel to share a file.", "error"); return; }
-    reset(); modal.classList.remove("hidden"); document.getElementById("file-choose").focus();
+    reset();
+    document.getElementById("file-modal-note").textContent = me.files_go_to_zulip
+      ? "It goes to Zulip as a direct message to everyone in this channel right now. Up to 200 MB."
+      : "Everyone in this channel gets a link. Files are kept for 4 hours, up to 200 MB.";
+    modal.classList.remove("hidden"); document.getElementById("file-choose").focus();
   });
   document.getElementById("file-choose").addEventListener("click", () => input.click());
   document.getElementById("file-cancel").addEventListener("click", close);
@@ -873,11 +882,13 @@ document.getElementById("chat-send").addEventListener("click", sendChat);
       const ok = xhr.status === 201 && data.url;
       xhr = null;
       if (ok) {
-        const file = { name: data.name, size: data.size, url: data.url, expires_at: data.expires_at };
+        const file = { name: data.name, size: data.size, url: data.url, expires_at: data.expires_at, zulip: !!data.zulip };
         if (lkRoom) await lkRoom.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ type: "chat", message: "", file })), { reliable: true });
         appendChatMessage("You", "", file);
         close();
-        setStatus("File shared. The link works for 4 hours.");
+        setStatus(data.zulip ? "File shared on Zulip with everyone in this channel."
+          : data.zulip_fallback ? "Zulip didn't take the file, so it's shared here instead. The link works for 4 hours."
+          : "File shared. The link works for 4 hours.");
         return;
       }
       err.textContent = data.error || "The upload didn't go through. Try again.";

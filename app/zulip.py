@@ -102,7 +102,9 @@ def verify_zulip_credentials(email: str, password: str):
             timeout=5
         )
         if resp.status_code == 200:
-            return True, _profile_from_user(resp.json(), user_id, email)
+            profile = _profile_from_user(resp.json(), user_id, email)
+            profile["_auth"] = (email, api_key)  # kept server-side until logout (zulipkeys.py)
+            return True, profile
         logger.warning("zulip users/me for user_id=%s -> HTTP %s; falling back to no privileges",
                        user_id, resp.status_code)
     except Exception as e:
@@ -120,4 +122,5 @@ def verify_zulip_credentials(email: str, password: str):
         "is_admin": False,
         "is_owner": False,
         "is_moderator": False,
+        "_auth": (email, api_key),
     }

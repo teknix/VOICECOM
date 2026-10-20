@@ -44,7 +44,8 @@ def me():
         "user_id": session["user_id"],
         "display_name": session["display_name"],
         "role": session["role"],
-        "avatar_url": session.get("avatar_url")
+        "avatar_url": session.get("avatar_url"),
+        "files_go_to_zulip": bool(session.get("zk")),
     })
 
 

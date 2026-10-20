@@ -12,6 +12,7 @@ from .zulip import verify_zulip_credentials
 from .matrix import verify_matrix_credentials, is_mxid
 from .models import db
 from .avatars import prefetch as prefetch_avatar
+from . import zulipkeys
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +91,8 @@ def authenticate(username, password):
                 "user_id": profile["user_id"],
                 "display_name": profile["full_name"],
                 "role": role,
-                "avatar_url": profile["avatar_url"]
+                "avatar_url": profile["avatar_url"],
+                "zulip_auth": profile.get("_auth"),
             }
 
     # 2b. Check Matrix (Optional) — '@user:homeserver' + password, verified by that homeserver.
@@ -154,12 +156,15 @@ def login():
 
         success, user_info = authenticate(username, password)
         if success:
+            zulipkeys.drop(session.get("zk"))  # signing in again replaces any earlier key
             session.clear()
             session["user_id"] = user_info["user_id"]
             session["display_name"] = user_info["display_name"]
             session["role"] = user_info["role"]
             session["avatar_url"] = user_info["avatar_url"]
             session["sector"] = sector
+            if user_info.get("zulip_auth"):
+                session["zk"] = zulipkeys.save(*user_info["zulip_auth"])
             prefetch_avatar(user_info["avatar_url"])
             return redirect("/")
 
@@ -172,5 +177,6 @@ def login():
 
 @auth_bp.route("/auth/logout")
 def logout():
+    zulipkeys.drop(session.get("zk"))  # the user's Zulip key goes with the session
     session.clear()
     return redirect("/auth/login")
