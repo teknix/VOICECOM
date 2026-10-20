@@ -61,6 +61,7 @@
       body:not(.density-irc) .floor-item .btn { min-height: 40px; min-width: 44px; }
     }
 
+    #sidebar header .brand { display: inline-flex; align-items: center; gap: .5rem; color: var(--text); font-weight: 700; letter-spacing: .06em; }
     #sidebar header { padding: .75rem 1rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
     #room-list { flex: 1; overflow-y: auto; padding: .5rem 0; }
     .room-item { padding: .5rem 1rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: .9rem; border-radius: 4px; margin: 0 .5rem; }
@@ -180,6 +181,7 @@
     #reconnect-banner .btn { min-height: 36px; padding: .3rem .9rem; }
     .hidden { display: none !important; }
   </style>
+{% include "_icons.html" %}
 </head>
 <body>
 <div id="reconnect-banner" role="status" style="display:none"><span id="reconnect-text">Connection lost. Reconnecting…</span> <button class="btn" id="reconnect-retry" hidden>Try again</button></div>
@@ -189,7 +191,7 @@
 
 <div id="sidebar">
   <header>
-    <span>{{ app_name }}</span>
+    <span class="brand"><img class="brand-mark" src="/static/brand/voicecom-mark.svg" alt="" width="22" height="23">{{ app_name }}</span>
     <div style="display:flex; align-items:center; gap:.5rem;">
       <button id="density-toggle" title="Toggle IRC Density" style="background:none; border:none; cursor:pointer; font-size:1.1rem; padding:0; filter: grayscale(1);">⌨️</button>
       <a href="/admin" id="admin-link" class="hidden" style="font-size:.75rem;color:#60a5fa">Admin</a>

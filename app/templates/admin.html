@@ -88,11 +88,13 @@
     .input-group label { display: block; font-size: .72rem; color: var(--muted); margin-bottom: .4rem; text-transform: uppercase; letter-spacing: .04em; }
     .input-group input, .input-group select { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: .55rem; border-radius: 6px; font-size: .9rem; }
     .modal-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1.5rem; }
+    h1.brand { display: flex; align-items: center; gap: .5rem; }
   </style>
+{% include "_icons.html" %}
 </head>
 <body>
   <header>
-    <h1><span>{{ app_name }}</span> Admin</h1>
+    <h1 class="brand"><img class="brand-mark" src="/static/brand/voicecom-mark.svg" alt="" width="26" height="27"><span>{{ app_name }}</span> Admin</h1>
     <nav>
       <a href="/">← Voice</a>
       <a href="/auth/logout">Logout</a>

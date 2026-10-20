@@ -73,6 +73,24 @@ def create_app():
                 error="Too many sign-in attempts. Wait a minute, then try again."), 429
         return jsonify({"error": "Too many requests. Wait a minute, then try again."}), 429
 
+    @app.route("/favicon.ico")
+    def favicon():
+        from flask import send_from_directory
+        return send_from_directory(os.path.join(app.static_folder, "brand"), "favicon-32.png",
+                                   mimetype="image/png", max_age=86400)
+
+    @app.route("/manifest.webmanifest")
+    def manifest():
+        """Add-to-home-screen: the app's own name (APP_NAME) and the VoiceCom icon."""
+        from flask import jsonify
+        from .config import APP_NAME
+        resp = jsonify({"name": APP_NAME, "short_name": APP_NAME, "start_url": "/", "display": "standalone",
+                        "background_color": "#111111", "theme_color": "#111111",
+                        "icons": [{"src": "/static/brand/icon-192.png", "sizes": "192x192", "type": "image/png"},
+                                  {"src": "/static/brand/icon-512.png", "sizes": "512x512", "type": "image/png"}]})
+        resp.mimetype = "application/manifest+json"
+        return resp
+
     @app.context_processor
     def branding():
         from .config import APP_NAME, ENABLE_SECTORS, ENABLE_MATRIX_AUTH
