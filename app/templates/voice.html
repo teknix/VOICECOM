@@ -100,7 +100,8 @@
     #floor-container h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: 0 0 .75rem; }
     #floor { display: flex; flex-direction: column; min-height: 2000px; position: relative; } /* height set dynamically */
     .floor-item { display: flex; align-items: center; gap: .6rem; padding: .4rem .6rem; border-radius: 4px; font-size: .9rem; position: absolute; left: 0; right: 0; height: 40px; }
-    .floor-item.speaking { background: rgba(76, 201, 240, .12); }
+    .floor-item.speaking, .floor-header.speaking { background: rgba(76, 201, 240, .12); }
+    .floor-header:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
     .floor-item .avatar { width: 24px; height: 24px; border-radius: 50%; background: var(--muted); background-size: cover; background-position: center; line-height: 24px; text-align: center; font-weight: bold; font-size: 0.7rem; }
     /* Photo sits over the initial; if it fails to load it is removed and the initial shows. */
     .avatar { position: relative; overflow: hidden; flex-shrink: 0; }
@@ -108,7 +109,7 @@
     .floor-item .name { flex: 1; }
     .floor-item .role-badge { font-size: .7rem; padding: .15rem .4rem; border-radius: 3px; background: var(--surface); border: 1px solid var(--border); }
     .floor-item .role-badge.admin { background: #7209b7; color: white; }
-    .floor-header { display: flex; align-items: center; padding: 0 .6rem; font-size: .75rem; text-transform: uppercase; color: var(--muted); font-weight: bold; border-bottom: 1px solid var(--border); position: absolute; left: 0; right: 0; height: 40px; background: var(--surface); z-index: 1; }
+    .floor-header { width: 100%; border: 0; border-bottom: 1px solid var(--border); cursor: pointer; text-align: left; font-family: inherit; display: flex; align-items: center; padding: 0 .6rem; font-size: .75rem; text-transform: uppercase; color: var(--muted); font-weight: bold; border-bottom: 1px solid var(--border); position: absolute; left: 0; right: 0; height: 40px; background: var(--surface); z-index: 1; }
 
     /* High Density IRC Mode */
     body.density-irc { font-size: 0.85rem; }
@@ -687,6 +688,19 @@ document.getElementById("chat-input").addEventListener("keypress", (e) => {
   if (e.key === "Enter" && !emojiTypeaheadOpen()) sendChat();
 });
 
+// Sectors in the participant list fold away with a tap; remembered per browser.
+const sectorOf = new Map(); // identity -> sector, for lighting a folded sector when someone in it talks
+const collapsedSectors = new Set((() => {
+  try { return JSON.parse(localStorage.getItem("collapsedSectors") || "[]"); } catch (e) { return []; }
+})());
+function toggleSector(sector) {
+  if (collapsedSectors.has(sector)) collapsedSectors.delete(sector);
+  else collapsedSectors.add(sector);
+  try { localStorage.setItem("collapsedSectors", JSON.stringify([...collapsedSectors])); } catch (e) {}
+  updateParticipantsList();
+  renderFloor();
+}
+
 function updateParticipantsList() {
   if (!lkRoom) return;
   allParticipants = [lkRoom.localParticipant, ...lkRoom.remoteParticipants.values()];
@@ -694,6 +708,7 @@ function updateParticipantsList() {
   
   // Group and sort by Sector
   const sectors = {};
+  sectorOf.clear();
   allParticipants.forEach(p => {
     let sector = "General";
     try {
@@ -702,14 +717,19 @@ function updateParticipantsList() {
     } catch (e) {}
     if (!sectors[sector]) sectors[sector] = [];
     sectors[sector].push(p);
+    sectorOf.set(p.identity, sector);
   });
   
   floorItems = [];
   const sortedSectors = Object.keys(sectors).sort();
   sortedSectors.forEach(sector => {
-    floorItems.push({ type: 'header', label: sector });
-    sectors[sector].sort((a, b) => (a.name || a.identity || "").localeCompare(b.name || b.identity || ""));
-    sectors[sector].forEach(p => {
+    const members = sectors[sector];
+    const collapsed = collapsedSectors.has(sector);
+    const speaking = members.some(p => activeSpeakerIdentities.has(p.identity));
+    floorItems.push({ type: 'header', label: sector, count: members.length, collapsed, speaking });
+    if (collapsed) return;
+    members.sort((a, b) => (a.name || a.identity || "").localeCompare(b.name || b.identity || ""));
+    members.forEach(p => {
       floorItems.push({ type: 'participant', participant: p });
     });
   });
@@ -782,6 +802,12 @@ function updateFloorSpeaking() {
   document.querySelectorAll("#floor .floor-item").forEach(div => {
     div.classList.toggle("speaking", activeSpeakerIdentities.has(div.dataset.identity));
   });
+  document.querySelectorAll("#floor .floor-header").forEach(btn => {
+    const sector = btn.dataset.sector;
+    const talking = collapsedSectors.has(sector) &&
+      [...activeSpeakerIdentities].some(id => sectorOf.get(id) === sector);
+    btn.classList.toggle("speaking", talking);
+  });
 }
 
 function renderFloor() {
@@ -803,8 +829,16 @@ function renderFloor() {
     div.style.top = (i * currentItemHeight) + "px";
 
     if (item.type === 'header') {
-      div.className = "floor-header";
-      div.textContent = `Sector: ${item.label}`;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "floor-header" + (item.speaking && item.collapsed ? " speaking" : "");
+      btn.dataset.sector = item.label;
+      btn.style.top = div.style.top;
+      btn.setAttribute("aria-expanded", String(!item.collapsed));
+      btn.textContent = `${item.collapsed ? "▸" : "▾"} ${item.label} · ${item.count}`;
+      btn.onclick = () => toggleSector(item.label);
+      floor.appendChild(btn);
+      continue;
     } else {
       const p = item.participant;
       const isLocal = p === lkRoom.localParticipant;
