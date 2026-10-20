@@ -99,7 +99,7 @@ def create_room():
         return jsonify({"error": f"min_role must be one of {sorted(ROLE_PRIORITY)}"}), 400
 
     if db.rooms.find_one({"_id": room_id}):
-        return jsonify({"error": "Room already exists"}), 409
+        return jsonify({"error": "A channel with that ID already exists"}), 409
 
     db.rooms.insert_one({
         "_id": room_id,

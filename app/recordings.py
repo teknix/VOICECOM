@@ -37,7 +37,7 @@ def upload_recording():
     if not room_id:
         return jsonify({"error": "room_id required"}), 400
     if not db.rooms.find_one({"_id": room_id}):
-        return jsonify({"error": "Unknown room"}), 404
+        return jsonify({"error": "Unknown channel"}), 404
 
     f = request.files.get("file")
     if not f or not f.filename:

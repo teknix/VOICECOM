@@ -22,7 +22,7 @@ def test_sync_room_success(mod_client, mock_mongo, sample_room):
 def test_sync_room_not_found(mod_client):
     resp = mod_client.post("/api/rooms/nonexistent/sync")
     assert resp.status_code == 404
-    assert resp.get_json()["error"] == "Room not found"
+    assert resp.get_json()["error"] == "Channel not found"
 
 def test_sync_room_forbidden_for_member(authed_client, sample_room):
     resp = authed_client.post(f"/api/rooms/{sample_room}/sync")

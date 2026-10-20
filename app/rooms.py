@@ -25,7 +25,7 @@ def send_chat(room_id):
 
     room = db.rooms.find_one({"_id": room_id})
     if not room:
-        return jsonify({"error": "Room not found"}), 404
+        return jsonify({"error": "Channel not found"}), 404
 
     # Bridge to Zulip (Deferred to v2.0)
     # stream = room.get("zulip_stream", "voicecom")
@@ -170,7 +170,7 @@ def toggle_mode(room_id):
 
     room = db.rooms.find_one({"_id": room_id})
     if not room:
-        return jsonify({"error": "Room not found"}), 404
+        return jsonify({"error": "Channel not found"}), 404
 
     # A mode switch ends the current floor; re-grant afterward if needed.
     room["floor_holder"] = None
@@ -187,7 +187,7 @@ def toggle_mode(room_id):
 def sync_room(room_id):
     room = db.rooms.find_one({"_id": room_id})
     if not room:
-        return jsonify({"error": "Room not found"}), 404
+        return jsonify({"error": "Channel not found"}), 404
 
     mode = room.get("mode", "discussion")
     res, status = _set_room_mode(room_id, room, mode)
@@ -304,7 +304,7 @@ def grant_floor(room_id):
 
     room = db.rooms.find_one({"_id": room_id})
     if not room:
-        return jsonify({"error": "Room not found"}), 404
+        return jsonify({"error": "Channel not found"}), 404
 
     prev = room.get("floor_holder")
     db.rooms.update_one({"_id": room_id}, {"$set": {"floor_holder": target or None}})

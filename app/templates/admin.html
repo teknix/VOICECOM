@@ -107,7 +107,7 @@
         <div class="value"><span class="health {{ 'up' if lk_healthy else 'down' }}">{{ 'Healthy' if lk_healthy else 'Down' }}</span></div>
       </div>
       <div class="stat">
-        <div class="label">Active Rooms</div>
+        <div class="label">Active channels</div>
         <div class="value">{{ rooms | length }}</div>
         <div class="sub">{{ rooms | sum(attribute='participant_count') }} online now</div>
       </div>
@@ -122,14 +122,14 @@
       </div>
     </div>
 
-    <!-- Rooms -->
+    <!-- Channels -->
     <section class="card">
       <div class="card-head">
-        <h2>Rooms <span class="count">{{ rooms | length }}</span></h2>
-        <button class="btn primary" onclick="openCreateRoomModal()">+ Add Room</button>
+        <h2>Channels <span class="count">{{ rooms | length }}</span></h2>
+        <button class="btn primary" onclick="openCreateRoomModal()">+ Add channel</button>
       </div>
       <div class="table-scroll"><table>
-        <thead><tr><th>Room ID</th><th>Name</th><th>Mode</th><th>Access</th><th>People</th><th>Manage</th></tr></thead>
+        <thead><tr><th>Channel ID</th><th>Name</th><th>Mode</th><th>Access</th><th>People</th><th>Manage</th></tr></thead>
         <tbody>
         {% for room in rooms %}
           <tr>
@@ -152,7 +152,7 @@
             </td>
           </tr>
         {% else %}
-          <tr class="empty"><td colspan="6">No rooms</td></tr>
+          <tr class="empty"><td colspan="6">No channels yet</td></tr>
         {% endfor %}
         </tbody>
       </table></div>
@@ -164,7 +164,7 @@
         <h2>Recordings <span class="count">{{ active_recordings | length }}</span></h2>
       </div>
       <div class="table-scroll"><table>
-        <thead><tr><th>Play</th><th>Room</th><th>Started By</th><th>When</th><th>Size</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Play</th><th>Channel</th><th>Started By</th><th>When</th><th>Size</th><th>Actions</th></tr></thead>
         <tbody>
         {% for rec in active_recordings %}
           <tr>
@@ -216,7 +216,7 @@
         <h2>Recent Audit Log <span class="count">{{ recent_audit | length }}</span></h2>
       </div>
       <div class="table-scroll"><table>
-        <thead><tr><th>Time</th><th>Event</th><th>Room</th><th>Actor</th></tr></thead>
+        <thead><tr><th>Time</th><th>Event</th><th>Channel</th><th>Actor</th></tr></thead>
         <tbody>
         {% for entry in recent_audit %}
           <tr>
@@ -237,7 +237,7 @@
   <div class="modal-backdrop" id="backdrop" onclick="closeAllModals()"></div>
 
   <div id="room-modal">
-    <h3 id="modal-title" style="margin-top:0">Manage Room</h3>
+    <h3 id="modal-title" style="margin-top:0">Manage channel</h3>
     <div class="input-group">
       <label>Operator Passphrase</label>
       <input type="password" id="room-oppass" placeholder="Leave empty to disable">
@@ -253,25 +253,25 @@
     </div>
     <div class="input-group" style="display:flex; align-items:center; gap:.5rem;">
       <input type="checkbox" id="room-locked" style="width:auto; margin-bottom:0">
-      <label style="margin-bottom:0">Locked (Only Admins can join)</label>
+      <label style="margin-bottom:0">Locked (only admins can join)</label>
     </div>
     <div style="display:flex; justify-content:space-between; gap:.5rem; margin-top:1.5rem;">
-      <button class="btn danger" onclick="kickAll()">Kick All</button>
+      <button class="btn danger" onclick="kickAll()">Remove everyone</button>
       <div style="display:flex; gap:.5rem;">
         <button class="btn ghost" onclick="closeModal()">Cancel</button>
-        <button class="btn primary" onclick="saveRoom()">Save Settings</button>
+        <button class="btn primary" onclick="saveRoom()">Save</button>
       </div>
     </div>
   </div>
 
   <div id="create-room-modal">
-    <h3 style="margin-top:0">Add New Room</h3>
+    <h3 style="margin-top:0">Add a channel</h3>
     <div class="input-group">
-      <label>Room ID (slug)</label>
+      <label>Channel ID (short name for links, e.g. front-desk)</label>
       <input type="text" id="new-room-id" placeholder="e.g. ops-channel" required>
     </div>
     <div class="input-group">
-      <label>Display Name</label>
+      <label>Name people see</label>
       <input type="text" id="new-room-name" placeholder="e.g. Ops Channel" required>
     </div>
     <div class="input-group">
@@ -285,18 +285,18 @@
     </div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeCreateRoomModal()">Cancel</button>
-      <button class="btn primary" onclick="createRoom()">Create Room</button>
+      <button class="btn primary" onclick="createRoom()">Create channel</button>
     </div>
   </div>
 
   <div id="user-modal">
-    <h3 style="margin-top:0">Add New User</h3>
+    <h3 style="margin-top:0">Add a user</h3>
     <div class="input-group">
       <label>Username</label>
       <input type="text" id="user-username" required>
     </div>
     <div class="input-group">
-      <label>Display Name</label>
+      <label>Name people see</label>
       <input type="text" id="user-name" required>
     </div>
     <div class="input-group">
@@ -384,7 +384,7 @@
     }
 
     async function kickAll() {
-      if (!currentRoomId || !confirm("Kick everyone from this room?")) return;
+      if (!currentRoomId || !confirm("Remove everyone from this channel?")) return;
       const resp = await fetch(`/api/admin/rooms/${currentRoomId}/kick-all`, {
         method: 'POST', headers: { 'X-CSRFToken': CSRF }
       });
@@ -440,7 +440,7 @@
     }
 
     async function deleteRoom(id) {
-      if (!confirm(`Delete room "${id}"? This will kick all participants.`)) return;
+      if (!confirm(`Delete channel "${id}"? Everyone in it will be removed.`)) return;
       const resp = await fetch(`/api/admin/rooms/${id}`, { method: 'DELETE', headers: { 'X-CSRFToken': CSRF } });
       if (resp.ok) location.reload();
     }
