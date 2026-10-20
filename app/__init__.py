@@ -24,6 +24,8 @@ def create_app():
     from .webhook import webhook_bp
     from .admin import admin_bp
     from .lab import lab_bp
+    from .chatfiles import chatfiles_bp, start_sweeper
+    from .unfurl import unfurl_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(rooms_bp)
@@ -31,6 +33,10 @@ def create_app():
     app.register_blueprint(webhook_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(lab_bp)
+    app.register_blueprint(chatfiles_bp)
+    app.register_blueprint(unfurl_bp)
+    if not app.config.get("TESTING"):
+        start_sweeper()
 
     # Exempt JSON API and webhook routes from CSRF — authenticated by session
     # csrf.exempt(rooms_bp)

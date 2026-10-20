@@ -27,8 +27,8 @@ window.EMOJI_MAP = {
   "poop": "💩",
 
   // Gestures & people
-  "+1": "👍", "thumbs_up": "👍", "like": "👍", "-1": "👎",
-  "thumbs_down": "👎", "ok": "👌", "ok_hand": "👌", "clap": "👏",
+  "+1": "👍", "thumbs_up": "👍", "thumbsup": "👍", "like": "👍", "-1": "👎",
+  "thumbs_down": "👎", "thumbsdown": "👎", "ok": "👌", "ok_hand": "👌", "clap": "👏",
   "wave": "👋", "hand": "✋", "raised_hand": "✋", "raised_hands": "🙌",
   "open_hands": "👐", "muscle": "💪", "pray": "🙏", "point_up": "☝️",
   "point_right": "👉", "point_left": "👈", "point_down": "👇",

@@ -32,6 +32,8 @@ def mock_mongo(monkeypatch):
         "app.admin.db",
         "app.avatars.db",
         "app.lab.db",
+        "app.chatfiles.db",
+        "app.utils.db",
     ]:
         monkeypatch.setattr(target, db)
     yield db
