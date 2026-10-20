@@ -93,24 +93,13 @@
     .emoji-option .emoji-name { color: var(--muted); }
     #chat-input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); padding: .4rem .6rem; font-size: .85rem; }
     
-    /* Stage: Top Speakers */
-    /* ponytail: fixed height + internal scroll so the floor never shifts as speakers come/go */
-    #stage { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; height: 150px; overflow-y: auto; align-content: start; }
-    #stage:empty::after { content: "No one is speaking"; color: var(--muted); font-size: .85rem; padding: 1rem; text-align: center; width: 100%; grid-column: 1/-1; }
-    .stage-item { background: var(--surface); border: 2px solid var(--border); border-radius: 8px; padding: 1rem; text-align: center; transition: border-color 0.2s; }
-    .stage-item.speaking { border-color: var(--primary); box-shadow: 0 0 10px var(--primary); }
-    .stage-item .avatar { 
-      width: 48px; height: 48px; background: var(--muted); border-radius: 50%; 
-      margin: 0 auto .5rem; line-height: 48px; font-weight: bold; font-size: 1.2rem; 
-      background-size: cover; background-position: center;
-    }
-
     /* Floor: Virtualized list */
-    #floor-container { flex: 1; overflow-y: auto; border-top: 1px solid var(--border); padding-top: 1rem; }
-    #floor-container h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: 0 0 .75rem; }
+    #floor-container { flex: 1; overflow-y: auto; }
+    #floor-container h2, #hand-queue h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: 0 0 .75rem; }
     #floor { display: flex; flex-direction: column; min-height: 2000px; position: relative; } /* height set dynamically */
     .floor-item { display: flex; align-items: center; gap: .6rem; padding: .4rem .6rem; border-radius: 4px; font-size: .9rem; position: absolute; left: 0; right: 0; height: 40px; }
-    .floor-item.speaking, .floor-header.speaking { background: rgba(76, 201, 240, .12); }
+    .floor-item.hand, .floor-header.hand { background: rgba(245, 158, 11, .16); box-shadow: inset 4px 0 0 #f59e0b; }
+    .floor-item.speaking, .floor-header.speaking { background: rgba(67, 97, 238, .28); box-shadow: inset 4px 0 0 var(--primary); }
     .floor-header:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
     .floor-item .avatar { width: 24px; height: 24px; border-radius: 50%; background: var(--muted); background-size: cover; background-position: center; line-height: 24px; text-align: center; font-weight: bold; font-size: 0.7rem; }
     /* Photo sits over the initial; if it fails to load it is removed and the initial shows. */
@@ -128,10 +117,6 @@
     body.density-irc .floor-item .role-badge { font-size: 0.65rem; padding: 0.05rem 0.3rem; }
     body.density-irc .floor-item .quality-dot { width: 6px !important; height: 6px !important; }
     body.density-irc .floor-item .btn { padding: 1px 4px !important; font-size: 0.65rem !important; }
-    body.density-irc .stage-item .avatar { width: 24px; height: 24px; line-height: 24px; font-size: 0.8rem; margin-bottom: 0.25rem; }
-    body.density-irc .stage-item { padding: 0.5rem; }
-    body.density-irc .stage-item div[style*="font-size:.9rem"] { font-size: 0.8rem !important; }
-    body.density-irc .stage-item div[style*="font-size:.7rem"] { font-size: 0.65rem !important; }
     
     #controls { position: relative; padding: .6rem 1rem; border-top: 1px solid var(--border); background: var(--surface); display: flex; gap: .5rem; align-items: center; }
     .btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; padding: .5rem .9rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); color: var(--text); font: inherit; font-size: .9rem; line-height: 1.2; cursor: pointer; white-space: nowrap; }
@@ -202,11 +187,6 @@
     <div id="room-main" class="hidden">
       <div id="floor-banner" class="hidden" style="padding:.5rem .75rem;border-radius:6px;margin-bottom:.5rem;font-weight:600;text-align:center"></div>
       <div id="listen-banner" class="hidden" style="padding:.5rem .75rem;border-radius:6px;margin-bottom:.5rem;font-weight:600;text-align:center;background:#4a1d6e;color:#e9d5ff"></div>
-
-      <div id="stage-area">
-        <h2 style="font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: 0 0 .75rem;">On Stage</h2>
-        <div id="stage"></div>
-      </div>
 
       <div id="floor-container">
         <h2>The Floor</h2>
@@ -437,7 +417,6 @@ async function joinRoom(roomId, displayName, mode) {
   document.getElementById("no-room").style.display = "none";
   document.getElementById("room-main").classList.remove("hidden");
   document.getElementById("room-chat").classList.remove("hidden");
-  document.getElementById("stage-area").classList.remove("hidden");
   document.getElementById("floor-container").classList.remove("hidden");
   document.getElementById("mic-btn").disabled = false;
   updateModeUI(mode);
@@ -471,7 +450,6 @@ function playJoinSound() {
 function setupRoomEvents(room, roomId) {
   const refresh = () => {
     updateParticipantsList();
-    renderStage();
     renderFloor();
   };
 
@@ -533,7 +511,6 @@ function setupRoomEvents(room, roomId) {
   });
   room.on(LivekitClient.RoomEvent.ActiveSpeakersChanged, speakers => {
     activeSpeakerIdentities = new Set(speakers.map(s => s.identity));
-    renderStage();
     // ponytail: only toggle the speaking class; don't rebuild floor rows or the
     // Mute buttons get destroyed under the user's cursor mid-click.
     updateFloorSpeaking();
@@ -798,50 +775,6 @@ function buildAvatar(avatarUrl, initial) {
   return avatarDiv;
 }
 
-function renderStage() {
-  const stage = document.getElementById("stage");
-
-  // Stage shows active speakers (max 10)
-  const speakers = allParticipants
-    .filter(p => activeSpeakerIdentities.has(p.identity))
-    .slice(0, 10);
-
-  // ActiveSpeakersChanged fires several times a second in a busy room. Reuse the
-  // existing card for anyone still speaking (keyed on everything it displays) so
-  // a speaker change doesn't rebuild every card and re-request every avatar.
-  const existing = new Map([...stage.children].map(el => [el.dataset.key, el]));
-  const cards = speakers.map(p => {
-    const key = [p.identity, p.name, p.metadata].join("\u0000");
-    return existing.get(key) || buildStageItem(p, key);
-  });
-  stage.replaceChildren(...cards);
-}
-
-function buildStageItem(p, key) {
-    const el = document.createElement("div");
-    el.className = "stage-item speaking";
-    el.dataset.key = key;
-    const initial = (p.name || p.identity).charAt(0).toUpperCase();
-
-    let metaObj = {};
-    try { metaObj = JSON.parse(p.metadata || "{}"); } catch(e) {}
-
-    const avatarDiv = buildAvatar(metaObj.avatar_url, initial);
-
-    const nameDiv = document.createElement("div");
-    nameDiv.style.cssText = "font-weight:600;font-size:.9rem;";
-    nameDiv.textContent = p.name || p.identity;
-
-    const roleDiv = document.createElement("div");
-    roleDiv.style.cssText = "font-size:.7rem;color:var(--muted)";
-    roleDiv.textContent = metaObj.role || "Member";
-
-    el.appendChild(avatarDiv);
-    el.appendChild(nameDiv);
-    el.appendChild(roleDiv);
-    return el;
-}
-
 function updateFloorSpeaking() {
   document.querySelectorAll("#floor .floor-item").forEach(div => {
     div.classList.toggle("speaking", activeSpeakerIdentities.has(div.dataset.identity));
@@ -875,7 +808,8 @@ function renderFloor() {
     if (item.type === 'header') {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "floor-header" + (item.speaking && item.collapsed ? " speaking" : "");
+      const handInside = item.collapsed && [...raisedHands.keys()].some(id => sectorOf.get(id) === item.label);
+      btn.className = "floor-header" + (item.speaking && item.collapsed ? " speaking" : "") + (handInside ? " hand" : "");
       btn.dataset.sector = item.label;
       btn.style.top = div.style.top;
       btn.setAttribute("aria-expanded", String(!item.collapsed));
@@ -904,7 +838,9 @@ function renderFloor() {
 
       const nameSpan = document.createElement("span");
       nameSpan.className = "name";
-      nameSpan.textContent = (p.name || p.identity) + (isLocal ? " (you)" : "");
+      const hand = raisedHands.has(p.identity);
+      nameSpan.textContent = (hand ? "✋ " : "") + (p.name || p.identity) + (isLocal ? " (you)" : "");
+      if (hand) div.classList.add("hand");
 
       const initial = (p.name || p.identity).charAt(0).toUpperCase();
       const avatarDiv = buildAvatar(metaObj.avatar_url, initial);
@@ -1046,7 +982,6 @@ async function leaveRoom() {
   document.getElementById("no-room").style.display = "block";
   document.getElementById("room-main").classList.add("hidden");
   document.getElementById("room-chat").classList.add("hidden");
-  document.getElementById("stage-area").classList.add("hidden");
   document.getElementById("floor-container").classList.add("hidden");
   document.getElementById("reconnect-banner").style.display = "none";
   currentRoom = null;
@@ -1324,6 +1259,7 @@ function renderFloorBanner() {
 }
 
 function renderHandQueue() {
+  renderFloor(); // rows show ✋ and the hand colour
   const box = document.getElementById("hand-queue");
   if (!canControl() || currentRoomMode !== "broadcast") { box.classList.add("hidden"); return; }
   box.classList.remove("hidden");
