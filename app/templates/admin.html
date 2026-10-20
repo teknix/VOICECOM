@@ -47,6 +47,8 @@
     .card-head h2 .count { color: var(--text); background: var(--surface-2); padding: .05rem .45rem; border-radius: 999px; margin-left: .4rem; font-size: .75rem; }
 
     table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+    /* Wide tables scroll sideways inside their card, never the page (phones). */
+    .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     th { text-align: left; padding: .55rem 1.1rem; color: var(--muted); font-weight: 500; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
     td { padding: .6rem 1.1rem; border-top: 1px solid var(--border); vertical-align: middle; }
     tbody tr:hover td { background: var(--surface-2); }
@@ -121,7 +123,7 @@
         <h2>Rooms <span class="count">{{ rooms | length }}</span></h2>
         <button class="btn primary" onclick="openCreateRoomModal()">+ Add Room</button>
       </div>
-      <table>
+      <div class="table-scroll"><table>
         <thead><tr><th>Room ID</th><th>Name</th><th>Mode</th><th>Access</th><th>People</th><th>Manage</th></tr></thead>
         <tbody>
         {% for room in rooms %}
@@ -148,7 +150,7 @@
           <tr class="empty"><td colspan="6">No rooms</td></tr>
         {% endfor %}
         </tbody>
-      </table>
+      </table></div>
     </section>
 
     <!-- Recordings -->
@@ -156,7 +158,7 @@
       <div class="card-head">
         <h2>Recordings <span class="count">{{ active_recordings | length }}</span></h2>
       </div>
-      <table>
+      <div class="table-scroll"><table>
         <thead><tr><th>Play</th><th>Room</th><th>Started By</th><th>When</th><th>Size</th><th>Actions</th></tr></thead>
         <tbody>
         {% for rec in active_recordings %}
@@ -177,7 +179,7 @@
           <tr class="empty"><td colspan="6">No recordings yet</td></tr>
         {% endfor %}
         </tbody>
-      </table>
+      </table></div>
     </section>
 
     <!-- Users -->
@@ -186,7 +188,7 @@
         <h2>Users <span class="count">{{ users | length }}</span></h2>
         <button class="btn primary" onclick="openUserModal()">+ Add User</button>
       </div>
-      <table>
+      <div class="table-scroll"><table>
         <thead><tr><th>Username</th><th>Display Name</th><th>Role</th><th>Actions</th></tr></thead>
         <tbody>
         {% for user in users %}
@@ -200,7 +202,7 @@
           <tr class="empty"><td colspan="4">No internal users</td></tr>
         {% endfor %}
         </tbody>
-      </table>
+      </table></div>
     </section>
 
     <!-- Audit -->
@@ -208,7 +210,7 @@
       <div class="card-head">
         <h2>Recent Audit Log <span class="count">{{ recent_audit | length }}</span></h2>
       </div>
-      <table>
+      <div class="table-scroll"><table>
         <thead><tr><th>Time</th><th>Event</th><th>Room</th><th>Actor</th></tr></thead>
         <tbody>
         {% for entry in recent_audit %}
@@ -222,7 +224,7 @@
           <tr class="empty"><td colspan="4">No entries</td></tr>
         {% endfor %}
         </tbody>
-      </table>
+      </table></div>
     </section>
   </main>
 
