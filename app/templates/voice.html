@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{{ app_name }}</title>
   <style>
@@ -22,7 +22,9 @@
     }
 
     *, *::before, *::after { box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; display: flex; height: 100vh; overflow: hidden; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; display: flex; height: 100vh; height: 100dvh; overflow: hidden; }
+    /* 100dvh = the screen area left after the phone browser's own bars, so the control bar is never hidden under them. */
+    #status-bar { padding-bottom: max(.4rem, env(safe-area-inset-bottom)) !important; }
     /* Hot Mic: static inset border — fades in once via transition, zero CPU while held. */
     body::before {
       content: '';

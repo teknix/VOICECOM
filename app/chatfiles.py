@@ -37,7 +37,8 @@ FILES_DIR = os.environ.get("CHAT_FILES_DIR",
 MAX_FILE_BYTES = 200 * 1024 * 1024  # 200 MB (owner, 2026-10-19)
 FILE_TTL = timedelta(hours=4)
 # Shown in the browser; everything else downloads (an uploaded .html must never run on our origin).
-INLINE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+INLINE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp",
+                "video/mp4", "video/webm", "audio/mpeg", "audio/ogg", "audio/wav", "audio/mp4"}
 
 
 def safe_name(name):
@@ -191,5 +192,5 @@ def download_file(file_id, name):
     resp = send_file(path, mimetype=doc["mime"] if inline else "application/octet-stream",
                      as_attachment=not inline, download_name=doc["name"], max_age=0)
     resp.headers["X-Content-Type-Options"] = "nosniff"
-    resp.headers["Content-Security-Policy"] = "sandbox; default-src 'none'; img-src 'self'"
+    resp.headers["Content-Security-Policy"] = "sandbox; default-src 'none'; img-src 'self'; media-src 'self'"
     return resp
