@@ -342,6 +342,7 @@ async function joinRoom(roomId, displayName, mode) {
     document.getElementById("sidebar-overlay").classList.add("hidden");
   }
 
+  if (roomId !== currentRoom) stopClientRecording(); // a recording belongs to one room
   // Immediately silence the current channel to prevent audio bleed-over.
   // pause() + srcObject=null stops browser playback before any async work.
   document.querySelectorAll("#audio-container audio").forEach(el => {
@@ -923,6 +924,7 @@ function showHandRaise(msg) {
 }
 
 async function leaveRoom() {
+  stopClientRecording(); // upload before the room's tracks go away
   // Stop all audio immediately before async disconnects to prevent bleed
   document.querySelectorAll("#audio-container audio").forEach(el => {
     el.pause();
@@ -1306,7 +1308,7 @@ function canRecord() {
   if (currentRoomMode === "broadcast") return canControl() || floorHolder === me.user_id;
   return true;
 }
-let rec = null; // { mr, ctx, dest, sources(Map), chunks, startedMs }
+let rec = null; // { mr, ctx, dest, sources(Map), chunks, startedMs, room }
 
 function recAddTrack(mst) {
   if (!rec || !mst || rec.sources.has(mst.id)) return;
@@ -1322,7 +1324,7 @@ async function startClientRecording() {
   // The record click is the user gesture that lets resume() succeed.
   try { await ctx.resume(); } catch (e) {}
   const dest = ctx.createMediaStreamDestination();
-  rec = { mr: null, ctx, dest, sources: new Map(), chunks: [], startedMs: Date.now() };
+  rec = { mr: null, ctx, dest, sources: new Map(), chunks: [], startedMs: Date.now(), room: currentRoom };
   // Mix everyone currently audible: local mic + all subscribed remote audio tracks.
   const mic = lkRoom.localParticipant.getTrackPublication(LivekitClient.Track.Source.Microphone);
   if (mic && mic.track) recAddTrack(mic.track.mediaStreamTrack);
@@ -1339,21 +1341,68 @@ async function startClientRecording() {
 
 async function uploadRecording() {
   const blob = new Blob(rec.chunks, { type: "audio/webm" });
-  const startedMs = rec.startedMs, room = currentRoom;
+  const startedMs = rec.startedMs, room = rec.room;
   try { rec.ctx.close(); } catch (e) {}
   rec = null;
   if (!blob.size) return;
+  const filename = `${room}_${startedMs}.webm`;
   const fd = new FormData();
   fd.append("room_id", room);
   fd.append("started_ms", String(startedMs));
-  fd.append("file", blob, `${room}_${startedMs}.webm`);
-  const resp = await fetch("/api/recordings/upload", {
-    method: "POST",
-    headers: { "X-CSRFToken": document.querySelector("meta[name=\"csrf-token\"]").content },
-    body: fd,
-  });
-  if (!resp.ok) setStatus("Recording upload failed: " + resp.status);
+  fd.append("file", blob, filename);
+  setStatus("Saving recording…");
+  let failure = null;
+  try {
+    const resp = await fetch("/api/recordings/upload", {
+      method: "POST",
+      headers: { "X-CSRFToken": document.querySelector("meta[name=\"csrf-token\"]").content },
+      body: fd,
+    });
+    if (!resp.ok) failure = "error " + resp.status;
+  } catch (e) {
+    failure = "network error";
+  }
+  if (failure) offerRecordingDownload(blob, filename, failure);
+  else setStatus("Recording saved");
 }
+
+// A failed upload must never lose the audio: keep the blob and let the
+// recorder save it locally until they dismiss the banner.
+function offerRecordingDownload(blob, filename, reason) {
+  const url = URL.createObjectURL(blob);
+  const el = document.createElement("div");
+  el.className = "rec-failed-banner";
+  el.style.cssText = "position:fixed;bottom:0;left:0;right:0;z-index:9999;background:#b45309;color:#fff;padding:.6rem 1rem;font-size:.9rem;display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;justify-content:center;";
+  const msg = document.createElement("span");
+  msg.textContent = `Recording couldn't be uploaded (${reason}). Save it to this device now:`;
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.textContent = "⬇ Download recording";
+  a.style.cssText = "color:#fff;font-weight:700;text-decoration:underline;";
+  const x = document.createElement("button");
+  x.textContent = "Dismiss";
+  x.className = "btn btn-secondary";
+  x.onclick = () => {
+    if (!confirm("Discard this recording? It has not been saved to the server.")) return;
+    URL.revokeObjectURL(url);
+    el.remove();
+  };
+  el.append(msg, a, x);
+  document.body.appendChild(el);
+  setStatus("Recording upload failed: " + reason + " — download it from the banner");
+}
+
+function stopClientRecording() {
+  if (!rec) return;
+  setRecordingState(false);
+  broadcastRecording(false);
+  rec.mr.stop();
+}
+
+window.addEventListener("beforeunload", (e) => {
+  if (rec || document.querySelector(".rec-failed-banner")) { e.preventDefault(); e.returnValue = ""; }
+});
 
 function setRecordingState(active) {
   const btn = document.getElementById("rec-btn");
@@ -1387,7 +1436,7 @@ document.getElementById("rec-btn").addEventListener("click", async () => {
   if (!currentRoom || !lkRoom) return;
   if (!canRecord()) { setStatus("Only the presenter can record during broadcast"); return; }
   if (!rec) await startClientRecording();
-  else { setRecordingState(false); broadcastRecording(false); rec.mr.stop(); }
+  else stopClientRecording();
 });
 
 // Leave
