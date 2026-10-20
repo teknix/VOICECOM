@@ -42,7 +42,7 @@
   }
 
   // ── Settings ───────────────────────────────────────────
-  const OPTS = ["wakelock", "video", "media", "autopip"];
+  const OPTS = ["wakelock", "video", "media", "autopip", "callvideo"];
   const settings = store.get("lab.settings", {});
   function settingsNow() {
     const s = {};
@@ -57,6 +57,7 @@
   // ── Room ───────────────────────────────────────────────
   let room = null, micOn = true, tone = null;
   const audioEls = new Map();          // track sid -> <audio>
+  const audioTracks = new Map();       // track sid -> remote MediaStreamTrack (for the call video)
 
   function setStatus(text, cls) {
     const el = $("status");
@@ -101,6 +102,7 @@
       $("mic").disabled = false;
       $("tone").disabled = false;
       $("pip").disabled = false;
+      $("fullscreen").disabled = false;
       setStatus("connected", "ok");
       people();
       applyAll();
@@ -131,7 +133,9 @@
       audioEls.clear();
       room = null;
       $("join").disabled = false;
-      for (const id of ["leave", "mic", "tone", "pip"]) $(id).disabled = true;
+      audioTracks.clear();
+      updateCallVideo(true);
+      for (const id of ["leave", "mic", "tone", "pip", "fullscreen"]) $(id).disabled = true;
       people();
       releaseWakeLock();
     });
@@ -146,11 +150,15 @@
       }
       document.body.append(el);
       audioEls.set(track.sid, el);
+      audioTracks.set(track.sid, track.mediaStreamTrack);
+      updateCallVideo(true);
     });
     r.on(E.TrackUnsubscribed, (track, pub, p) => {
       log(`stopped receiving ${track.kind} from ${p.name || p.identity}`);
       const el = audioEls.get(track.sid);
       if (el) { el.remove(); audioEls.delete(track.sid); }
+      audioTracks.delete(track.sid);
+      updateCallVideo(true);
     });
     r.on(E.TrackMuted, (pub, p) => log(`${p.name || p.identity} ${pub.source} muted`));
     r.on(E.TrackUnmuted, (pub, p) => log(`${p.name || p.identity} ${pub.source} unmuted`));
@@ -292,6 +300,61 @@
     } else if (v.srcObject) { v.pause(); v.srcObject = null; log("keep-awake video: off"); }
   }
 
+  // ── Call video: the call's audio played by a <video> (canvas picture + every remote audio track) ──
+  // Tests whether the browser keeps a playing video alive in the background where it
+  // freezes an <audio>. While it's on, the <audio> elements are muted so nothing plays twice.
+  const callVideo = $("callvideo");
+  for (const ev of ["play", "pause", "stalled", "waiting", "suspend", "ended"]) {
+    callVideo.addEventListener(ev, () => log(`call video ${ev}`));
+  }
+  callVideo.addEventListener("enterpictureinpicture", () => log("call video: picture-in-picture opened"));
+  callVideo.addEventListener("leavepictureinpicture", () => log("call video: picture-in-picture closed"));
+  async function updateCallVideo(quiet) {
+    const on = $("opt-callvideo").checked && !!room;
+    for (const el of audioEls.values()) el.muted = on;
+    if (!on) {
+      if (callVideo.srcObject) {
+        callVideo.pause();
+        callVideo.srcObject = null;
+        if (!quiet) log("call video: off");
+      }
+      callVideo.hidden = true;
+      return;
+    }
+    const tracks = [stream().getVideoTracks()[0], ...audioTracks.values()];
+    callVideo.srcObject = new MediaStream(tracks);
+    callVideo.muted = false;
+    callVideo.hidden = false;
+    try {
+      await callVideo.play();
+      log(`call video: playing (${audioTracks.size} call audio track${audioTracks.size === 1 ? "" : "s"})`);
+    } catch (err) { log("call video failed: " + err.message); }
+  }
+
+  // ── Fullscreen the call video ──────────────────────────
+  document.addEventListener("fullscreenchange", () => {
+    const el = document.fullscreenElement;
+    log(el ? `fullscreen: on (${el.id || el.tagName.toLowerCase()})` : "fullscreen: off");
+  });
+  document.addEventListener("fullscreenerror", () => log("fullscreen: refused by the browser"));
+  async function goFullscreen() {
+    if (!$("opt-callvideo").checked) {
+      $("opt-callvideo").checked = true;
+      settings.callvideo = true;
+      store.set("lab.settings", settings);
+      log("setting callvideo → on (for fullscreen)");
+    }
+    // No await before requestFullscreen: it must run inside the tap's user activation
+    // (Firefox allows ~1 s). updateCallVideo sets srcObject synchronously before it awaits.
+    const started = updateCallVideo(true);
+    try {
+      if (callVideo.requestFullscreen) await callVideo.requestFullscreen();
+      else if (callVideo.webkitEnterFullscreen) callVideo.webkitEnterFullscreen();
+      else log("fullscreen: not supported in this browser");
+    } catch (err) { log("fullscreen failed: " + err.message); }
+    await started;
+  }
+
   // ── Picture-in-picture ─────────────────────────────────
   const pipVideo = $("pip-video");
   pipVideo.addEventListener("enterpictureinpicture", () => log("picture-in-picture: opened"));
@@ -339,6 +402,7 @@
     if (o === "video") applyVideo(on);
     if (o === "media") applyMedia(on);
     if (o === "autopip") applyAutoPip(on);
+    if (o === "callvideo") updateCallVideo(false);
     if (!quiet) log(`setting ${o} → ${on ? "on" : "off"}`);
   }
   function applyAll() { for (const o of OPTS) if ($("opt-" + o).checked) apply(o, true, true); }
@@ -375,6 +439,7 @@
   $("mic").addEventListener("click", toggleMic);
   $("tone").addEventListener("click", () => (tone ? stopTone() : startTone().catch((e) => log("beep failed: " + e.message))));
   $("pip").addEventListener("click", openPip);
+  $("fullscreen").addEventListener("click", goFullscreen);
   $("send").addEventListener("click", () => saveLog(false));
   $("copy").addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(events.join("\n")); $("send-msg").textContent = "Copied."; }

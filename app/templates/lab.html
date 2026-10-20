@@ -31,6 +31,7 @@
     #log { background: #0b0b0d; border: 1px solid var(--border); border-radius: 8px; padding: 10px; height: 46vh; overflow: auto;
            font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; word-break: break-word; }
     #pip-canvas, #keepawake { display: none; }
+    #callvideo { width: 100%; max-width: 320px; aspect-ratio: 16 / 9; border: 1px solid var(--border); border-radius: 6px; background: #000; margin-top: 8px; }
     #pip-video { width: 160px; height: 90px; border: 1px solid var(--border); border-radius: 6px; background: #000; }
   </style>
 </head>
@@ -59,10 +60,16 @@
   <label class="opt"><input type="checkbox" id="opt-video"> Keep-awake video (fallback when Wake Lock doesn't work)</label>
   <label class="opt"><input type="checkbox" id="opt-media"> Phone media controls (Media Session: lock-screen controls, hang up)</label>
   <label class="opt"><input type="checkbox" id="opt-autopip"> Auto picture-in-picture when leaving the app (Chrome only)</label>
+  <label class="opt"><input type="checkbox" id="opt-callvideo"> Play the call through a video player instead of an audio player</label>
   <div class="row">
     <button id="pip" disabled>Open picture-in-picture</button>
     <video id="pip-video" muted playsinline aria-label="Picture-in-picture preview"></video>
   </div>
+  <div class="row">
+    <button id="fullscreen" disabled>Fullscreen the call video</button>
+  </div>
+  <video id="callvideo" playsinline controls hidden aria-label="Call video"></video>
+  <p class="muted">Fullscreen turns on the video player, then fills the screen with it. While it's fullscreen, press home or switch apps.</p>
   <p class="muted">Changes apply right away. Each run notes which options were on.</p>
 
   <h2>3 · Log</h2>
