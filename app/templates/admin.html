@@ -49,6 +49,11 @@
     table { width: 100%; border-collapse: collapse; font-size: .875rem; }
     /* Wide tables scroll sideways inside their card, never the page (phones). */
     .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    /* Touch screens and phones: every tap target at least 44 px (polish rule 4). */
+    @media (pointer: coarse), (max-width: 768px) {
+      .btn { min-height: 44px; display: inline-flex; align-items: center; }
+      nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 .4rem; }
+    }
     th { text-align: left; padding: .55rem 1.1rem; color: var(--muted); font-weight: 500; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
     td { padding: .6rem 1.1rem; border-top: 1px solid var(--border); vertical-align: middle; }
     tbody tr:hover td { background: var(--surface-2); }
