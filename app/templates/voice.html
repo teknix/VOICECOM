@@ -162,12 +162,15 @@
     #hand-btn { font-size: 1.05rem; line-height: 1; padding: .35rem .55rem; }
     #hand-btn.raised { background: #f59e0b; color: #fff; animation: handpulse 1.4s ease-in-out infinite; }
     @keyframes handpulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.12); } }
-    #status-bar { padding: .4rem 1.25rem; background: var(--surface); font-size: .75rem; color: var(--muted); border-top: 1px solid var(--border); }
+    #status-bar { padding: .4rem 1.25rem; background: var(--surface); font-size: .8rem; color: var(--muted); border-top: 1px solid var(--border); }
+    #status-bar.error { color: #fca5a5; font-size: .9rem; }
+    #reconnect-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 2500; display: flex; gap: .75rem; align-items: center; justify-content: center; flex-wrap: wrap; padding: .5rem 1rem; background: #7f1d1d; color: #fff; font-size: .9rem; text-align: center; }
+    #reconnect-banner .btn { min-height: 36px; padding: .3rem .9rem; }
     .hidden { display: none !important; }
   </style>
 </head>
 <body>
-<div id="reconnect-banner" style="display:none;background:var(--danger);color:#fff;text-align:center;padding:.5rem;font-size:.85rem;">Reconnecting…</div>
+<div id="reconnect-banner" role="status" style="display:none"><span id="reconnect-text">Connection lost. Reconnecting…</span> <button class="btn" id="reconnect-retry" hidden>Try again</button></div>
 
 <div id="sidebar-overlay" class="hidden" style="position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1400;"></div>
 <button id="mobile-toggle">☰</button>
@@ -402,7 +405,11 @@ async function joinRoom(roomId, displayName, mode) {
     },
     body: JSON.stringify({ room_id: roomId }),
   });
-  if (!resp.ok) { setStatus("Token error"); return; }
+  if (!resp.ok) {
+    const why = await resp.json().then(d => d.error).catch(() => null);
+    setStatus(why ? `Couldn't join this channel: ${why}` : "Couldn't join this channel. Try again in a moment.", "error");
+    return;
+  }
   const { token } = await resp.json();
 
   currentRoom = roomId;
@@ -419,7 +426,8 @@ async function joinRoom(roomId, displayName, mode) {
   try {
     await lkRoom.connect(LIVEKIT_WS_URL, token);
   } catch (e) {
-    setStatus("Connection failed: " + e.message);
+    console.error("connect failed:", e);
+    setStatus("Couldn't reach the voice server. Check your internet, then tap the channel again.", "error");
     return;
   }
 
@@ -561,8 +569,11 @@ function setupRoomEvents(room, roomId) {
     // Only reconnect for the active main room — globalRoom drops are silent.
     if (room === globalRoom) { globalRoom = null; return; }
     if (room !== lkRoom) return; // stale handler from a previous connection
-    setStatus("Disconnected: " + reason);
-    document.getElementById("reconnect-banner").style.display = "block";
+    console.warn("disconnected:", reason);
+    setStatus("Connection lost. Reconnecting…", "error");
+    document.getElementById("reconnect-text").textContent = "Connection lost. Reconnecting…";
+    document.getElementById("reconnect-retry").hidden = true;
+    document.getElementById("reconnect-banner").style.display = "";
     attemptReconnect(roomId);
   });
 }
@@ -1052,7 +1063,7 @@ async function attemptReconnect(roomId) {
   let attempts = 0;
   while (attempts < 5) {
     attempts++;
-    setStatus(`Reconnecting (attempt ${attempts}/5)...`);
+    setStatus(`Reconnecting… (try ${attempts} of 5)`, "error");
     try {
       // Tear down only the LiveKit layer — UI panels stay visible
       if (lkRoom) {
@@ -1069,7 +1080,7 @@ async function attemptReconnect(roomId) {
         },
         body: JSON.stringify({ room_id: roomId }),
       });
-      if (!resp.ok) throw new Error("Token error");
+      if (!resp.ok) throw new Error("token request failed: " + resp.status);
       const { token } = await resp.json();
 
       lkRoom = new LivekitClient.Room({ adaptiveStream: true, dynacast: true });
@@ -1085,11 +1096,22 @@ async function attemptReconnect(roomId) {
       await new Promise(r => setTimeout(r, 2000 * attempts));
     }
   }
-  setStatus("Failed to reconnect. Please refresh the page.");
+  // Out of tries: say so where it can't be missed, with one button that tries again.
+  setStatus("Couldn't reconnect. Check your internet, then tap Try again.", "error");
+  document.getElementById("reconnect-text").textContent = "Couldn't reconnect. Check your internet, then tap Try again.";
+  const retry = document.getElementById("reconnect-retry");
+  retry.hidden = false;
+  retry.onclick = () => {
+    retry.hidden = true;
+    document.getElementById("reconnect-text").textContent = "Reconnecting…";
+    attemptReconnect(roomId);
+  };
 }
 
-function setStatus(msg) {
-  document.getElementById("status-bar").textContent = msg;
+function setStatus(msg, kind) {
+  const bar = document.getElementById("status-bar");
+  bar.textContent = msg;
+  bar.classList.toggle("error", kind === "error");
 }
 
 // Mic toggle (Fast PTT via Track Muting)

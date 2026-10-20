@@ -57,6 +57,16 @@ def create_app():
                 error="Your session expired. Please sign in again."), 400
         return e.get_response()
 
+    @app.errorhandler(429)
+    def handle_rate_limit(e):
+        """Too many sign-in attempts: show the login form with a plain reason, not a raw page."""
+        from flask import request, jsonify
+        if request.path == "/auth/login":
+            return render_template(
+                "login.html",
+                error="Too many sign-in attempts. Wait a minute, then try again."), 429
+        return jsonify({"error": "Too many requests. Wait a minute, then try again."}), 429
+
     @app.context_processor
     def branding():
         from .config import APP_NAME, ENABLE_SECTORS, ENABLE_MATRIX_AUTH

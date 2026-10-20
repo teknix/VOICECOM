@@ -145,7 +145,7 @@ def authenticate(username, password):
 
 
 @auth_bp.route("/auth/login", methods=["GET", "POST"])
-@limiter.limit("5/minute")
+@limiter.limit("5/minute", methods=["POST"])  # page loads don't count, only sign-in attempts
 def login():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
