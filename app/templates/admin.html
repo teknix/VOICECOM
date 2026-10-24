@@ -58,6 +58,19 @@
     td { padding: .6rem 1.1rem; border-top: 1px solid var(--border); vertical-align: middle; }
     tbody tr:hover td { background: var(--surface-2); }
     .mono { font-family: ui-monospace, monospace; font-size: .8rem; }
+    td.people { min-width: 9rem; }
+    .who { list-style: none; margin: .3rem 0 0; padding: 0; font-size: .8rem; color: var(--muted); line-height: 1.4; }
+    .who li { overflow-wrap: anywhere; }
+    @media (max-width: 640px) {             /* phones: each channel is a card, every column a labelled line */
+      table.cards { min-width: 0; }
+      table.cards thead { display: none; }
+      table.cards tr { display: block; border-top: 1px solid var(--border); padding: .4rem 0; }
+      table.cards td { display: grid; grid-template-columns: 6.5rem 1fr; gap: .6rem; justify-items: start; border-top: 0; padding: .35rem 1rem; }
+      table.cards td::before { content: attr(data-label); color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; padding-top: .15rem; }
+      table.cards td.people { min-width: 0; }
+      table.cards .empty td { display: block; }
+      table.cards .empty td::before { content: none; }
+    }
     .empty td { color: var(--muted); text-align: center; padding: 1.5rem; }
 
     .badge { display: inline-block; padding: .15rem .5rem; border-radius: 999px; font-size: .72rem; background: var(--surface-2); border: 1px solid var(--border); }
@@ -130,23 +143,25 @@
         <h2>Channels <span class="count">{{ rooms | length }}</span></h2>
         <button class="btn primary" onclick="openCreateRoomModal()">+ Add channel</button>
       </div>
-      <div class="table-scroll"><table>
+      <div class="table-scroll"><table class="cards">
         <thead><tr><th>Channel ID</th><th>Name</th><th>Mode</th><th>Access</th><th>People</th><th>Manage</th></tr></thead>
         <tbody>
         {% for room in rooms %}
           <tr>
-            <td class="mono">{{ room._id }}</td>
-            <td>{{ room.display_name }}</td>
-            <td>{% if room.mode == 'broadcast' %}<span class="badge broadcast">broadcast</span>{% else %}<span class="badge">{{ room.mode }}</span>{% endif %}</td>
-            <td>
+            <td data-label="Channel ID" class="mono">{{ room._id }}</td>
+            <td data-label="Name">{{ room.display_name }}</td>
+            <td data-label="Mode">{% if room.mode == 'broadcast' %}<span class="badge broadcast">broadcast</span>{% else %}<span class="badge">{{ room.mode }}</span>{% endif %}</td>
+            <td data-label="Access">
               {% if room.locked %}🔒 Locked
               {% elif room.min_role == 'admin' %}👑 Admins only
               {% elif room.min_role == 'moderator' %}🛡️ Mods &amp; Admins
               {% elif room.min_role == 'operator' %}🎛️ Operators &amp; up
               {% else %}🔓 Open{% endif %}
             </td>
-            <td>{{ room.participant_count }}</td>
-            <td>
+            <td class="people" data-label="People"><div>{{ room.participant_count }}
+              {% if room.participant_names %}<ul class="who">{% for n in room.participant_names %}<li>{{ n }}</li>{% endfor %}</ul>{% endif %}
+            </div></td>
+            <td data-label="Manage">
               <div class="row-actions">
                 <button class="btn" onclick='openModal("{{ room._id }}", "{{ room.display_name }}", {{ "true" if room.locked else "false" }}, "{{ room.min_role or "" }}")'>⚙️ Manage</button>
                 <button class="btn danger" onclick='deleteRoom("{{ room._id }}")'>Delete</button>

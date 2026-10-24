@@ -17,6 +17,13 @@ def dashboard():
     participant_counts = lk.list_rooms_participants()
     for room in rooms:
         room["participant_count"] = participant_counts.get(room["_id"], 0)
+        room["participant_names"] = []
+        if room["participant_count"]:
+            try:
+                room["participant_names"] = sorted(
+                    (p.name or p.identity for p in lk.list_participants(room["_id"])), key=str.lower)
+            except Exception:
+                pass                      # LiveKit hiccup: the count still shows
 
     # Client-side recordings land as "complete" immediately (no "active" phase),
     # so show recent recordings, newest first.
